@@ -21803,6 +21803,19 @@ paths:
                           since the last request.
 
                           **Changes**: New in Zulip 6.0 (feature level 140).
+                      server_jitsi_jwt_enabled:
+                        type: boolean
+                        description: |
+                          Present if `realm` is present in `fetch_event_types`.
+
+                          Whether the Zulip server is configured to mint authenticated
+                          JWTs for its Jitsi server. When true, clients should request a
+                          call URL from `POST /calls/jitsi/create`, which checks that the
+                          user is a member of the conversation and returns a room name and
+                          token scoped to it. When false, clients generate an
+                          unauthenticated room name themselves.
+
+                          **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
                       server_jitsi_server_url:
                         type: string
                         nullable: true
@@ -27224,6 +27237,100 @@ paths:
                         "msg": "",
                         "result": "success",
                         "url": "/calls/bigbluebutton/join?meeting_id=%22zulip-something%22&password=%22something%22&checksum=%22somechecksum%22",
+                      }
+
+  /calls/jitsi/create:
+    post:
+      tags: ["channels"]
+      operationId: create-jitsi-video-call
+      summary: Create Jitsi Meet video call
+      description: |
+        Create an authenticated video call URL for a Jitsi Meet call.
+
+        Unlike the other video call endpoints, this one verifies that the user
+        is a member of the conversation the call belongs to: they must be
+        subscribed to the channel, or a valid recipient of the direct message.
+
+        Requires the Zulip server to be configured with JWT credentials for its
+        Jitsi Meet deployment; see `server_jitsi_jwt_enabled` in the
+        [`POST /register`](/api/register-queue) response. Without that
+        configuration, clients generate unauthenticated room names themselves.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                stream_id:
+                  type: integer
+                  description: |
+                    The ID of the channel the call belongs to. Exactly one of
+                    `stream_id` and `user_ids` must be specified.
+                  example: 7
+                user_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: |
+                    The IDs of the other participants in a direct message
+                    conversation. Exactly one of `stream_id` and `user_ids`
+                    must be specified.
+                  example: [9, 10]
+                epoch_token:
+                  type: string
+                  description: |
+                    A signed token from a previous response, identifying which
+                    room the conversation is currently using. Omit it to use the
+                    conversation's first room.
+                rotate:
+                  type: boolean
+                  default: false
+                  description: |
+                    Whether to move the conversation to a fresh room, abandoning
+                    the previous one. Useful when a link has leaked.
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      url:
+                        description: |
+                          The URL to join the call, carrying a token scoped to
+                          this room and valid for a short time.
+                        type: string
+                      room:
+                        description: |
+                          The name of the Jitsi room.
+                        type: string
+                      tenant:
+                        description: |
+                          The Jitsi tenant the room belongs to.
+                        type: string
+                      epoch_token:
+                        description: |
+                          A signed token identifying the room this conversation
+                          is currently using, to be passed back on later
+                          requests.
+                        type: string
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "url": "https://jitsi.example.com/engineering/c-6fe01c2e8f27d6f5?jwt=eyJhbGciOiJIUzI1NiJ9...",
+                        "room": "c-6fe01c2e8f27d6f5",
+                        "tenant": "engineering",
+                        "epoch_token": "eyJzY29wZSI6...",
                       }
 
   /calls/nextcloud_talk/create:

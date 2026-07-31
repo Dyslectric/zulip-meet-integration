@@ -193,6 +193,25 @@ UPLOAD_QUOTA_PER_USER_GB_FOR_PLUS = 25
 # Jitsi Meet video call integration; set to None to disable integration.
 JITSI_SERVER_URL: str | None = "https://meet.jit.si"
 
+# Optional JWT authentication for a self-hosted Jitsi Meet deployment. When
+# these are configured, Zulip mints a short-lived token scoped to a single room
+# and checks that the requesting user is actually a member of the conversation
+# the call belongs to. See prod_settings_template.py for deployment notes.
+JITSI_JWT_APP_ID: str | None = None
+JITSI_JWT_APP_SECRET = get_secret("jitsi_jwt_app_secret")
+# Set these two instead of JITSI_JWT_APP_SECRET for RS256 signing.
+JITSI_JWT_PRIVATE_KEY = get_secret("jitsi_jwt_private_key")
+JITSI_JWT_KEY_ID: str | None = None
+JITSI_JWT_ISSUER = "zulip"
+JITSI_JWT_AUDIENCE = "jitsi"
+# HMAC key used to derive unguessable room names. Rotating it rekeys every room.
+JITSI_ROOM_KEY = get_secret("jitsi_room_key")
+# Tenant for tenant-style Jitsi URLs (https://jitsi.example/TENANT/ROOM). When
+# unset, the realm's subdomain is used. Mapping is by Zulip user group name;
+# the first matching group in sorted order wins.
+JITSI_DEFAULT_TENANT: str | None = None
+JITSI_TENANT_BY_GROUP: dict[str, str] = {}
+
 # GIPHY API key.
 GIPHY_API_KEY = get_secret("giphy_api_key")
 

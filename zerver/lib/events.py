@@ -569,6 +569,10 @@ def fetch_initial_state_data(
             settings.JITSI_SERVER_URL.rstrip("/") if settings.JITSI_SERVER_URL is not None else None
         )
         state["server_jitsi_server_url"] = server_default_jitsi_server_url
+        # Whether this server can mint authenticated Jitsi links. Clients use
+        # this to decide between asking the server for a room (authenticated)
+        # and generating one themselves (unauthenticated, legacy).
+        state["server_jitsi_jwt_enabled"] = jitsi_jwt_is_configured()
         state["jitsi_server_url"] = (
             realm.jitsi_server_url
             if realm.jitsi_server_url is not None

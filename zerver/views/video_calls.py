@@ -34,17 +34,30 @@ from zerver.lib.cache import (
     flush_zoom_server_access_token_cache,
     zoom_server_access_token_cache_key,
 )
+from django.core.signing import BadSignature
+
 from zerver.lib.exceptions import ErrorCode, JsonableError
+from zerver.lib.jitsi_token import (
+    build_user_context,
+    channel_scope,
+    derive_room_name,
+    direct_message_scope,
+    jitsi_jwt_is_configured,
+    mint_jitsi_token,
+)
 from zerver.lib.message import truncate_content
 from zerver.lib.outgoing_http import OutgoingSession
 from zerver.lib.partial import partial
 from zerver.lib.pysa import mark_sanitized
 from zerver.lib.response import json_success
+from zerver.lib.streams import access_stream_by_id
 from zerver.lib.subdomains import get_subdomain
 from zerver.lib.typed_endpoint import typed_endpoint, typed_endpoint_without_parameters
 from zerver.lib.url_encoding import append_url_query_string
+from zerver.lib.user_groups import is_user_in_group
+from zerver.lib.users import access_user_by_id
 from zerver.lib.utils import assert_is_not_none
-from zerver.models import UserProfile
+from zerver.models import NamedUserGroup, UserProfile
 from zerver.models.realms import get_realm
 
 
@@ -763,3 +776,141 @@ def create_nextcloud_talk_url(
 
     call_url = urljoin(settings.NEXTCLOUD_SERVER, f"/index.php/call/{token}")
     return json_success(request, data={"url": call_url})
+
+
+# -- Jitsi Meet with JWT ------------------------------------------------------
+#
+# Unlike the other providers here, this one performs an authorization check. The
+# existing endpoints let any realm member mint a call for any room name, which is
+# harmless when the resulting room is unauthenticated anyway. Once Prosody starts
+# trusting our signature, it stops being harmless: the token is the only thing
+# standing between a user and a conversation they are not part of.
+
+
+def resolve_jitsi_tenant(user: UserProfile) -> str:
+    """Map a user to a Jitsi tenant.
+
+    Tenant-style URLs are what make isolation structural rather than a matter of
+    our own good intentions: Prosody's domain verification refuses a token whose
+    `sub` does not match the tenant in the URL, so a token minted for one tenant
+    cannot open a room in another even if this code is wrong about which room.
+    """
+    if settings.JITSI_TENANT_BY_GROUP:
+        # Sorted for determinism: a user in two mapped groups must always get
+        # the same tenant, or their room name changes between calls.
+        for group_name in sorted(settings.JITSI_TENANT_BY_GROUP):
+            try:
+                group = NamedUserGroup.objects.get(
+                    name=group_name, realm=user.realm, is_system_group=False
+                )
+            except NamedUserGroup.DoesNotExist:
+                continue
+            if is_user_in_group(group.id, user):
+                return settings.JITSI_TENANT_BY_GROUP[group_name].lower()
+
+    if settings.JITSI_DEFAULT_TENANT is not None:
+        return settings.JITSI_DEFAULT_TENANT.lower()
+    return user.realm.subdomain.lower()
+
+
+EPOCH_SIGNER_SALT = "zerver.views.video_calls.jitsi_epoch"
+
+
+def sign_jitsi_epoch(scope: str, epoch: int) -> str:
+    return Signer(salt=EPOCH_SIGNER_SALT).sign_object({"scope": scope, "epoch": epoch})
+
+
+def unsign_jitsi_epoch(scope: str, epoch_token: str | None) -> int:
+    """Recover the room epoch from a token we previously issued.
+
+    The epoch rotates a conversation's room. It is signed and round-tripped
+    rather than stored so that this endpoint stays stateless, and bound to its
+    scope so that an epoch issued for one conversation cannot be replayed
+    against another to force a room that a later caller would also derive.
+    """
+    if epoch_token is None:
+        return 0
+    try:
+        data = Signer(salt=EPOCH_SIGNER_SALT).unsign_object(epoch_token)
+    except BadSignature:
+        raise JsonableError(_("Invalid epoch token"))
+    if not isinstance(data, dict) or data.get("scope") != scope:
+        raise JsonableError(_("Invalid epoch token"))
+    epoch = data.get("epoch")
+    if not isinstance(epoch, int) or epoch < 0:
+        raise JsonableError(_("Invalid epoch token"))
+    return epoch
+
+
+@typed_endpoint
+def create_jitsi_call(
+    request: HttpRequest,
+    user: UserProfile,
+    *,
+    stream_id: Json[int] | None = None,
+    user_ids: Json[list[int]] | None = None,
+    epoch_token: str | None = None,
+    rotate: Json[bool] = False,
+) -> HttpResponse:
+    if settings.JITSI_SERVER_URL is None:
+        raise VideoCallProviderNotConfiguredError("Jitsi Meet")
+    if not jitsi_jwt_is_configured():
+        raise VideoCallProviderNotConfiguredError("Jitsi Meet (JWT)")
+
+    if (stream_id is None) == (user_ids is None):
+        raise JsonableError(_("Specify exactly one of stream_id or user_ids"))
+
+    is_moderator = user.is_realm_admin
+    if stream_id is not None:
+        # access_stream_by_id raises unless the user can reach the channel at
+        # all; `sub` is None when they can read it without being subscribed, and
+        # subscription is what we treat as membership.
+        stream, sub = access_stream_by_id(user, stream_id)
+        if sub is None:
+            raise JsonableError(_("Not subscribed to this channel"))
+        scope = channel_scope(user.realm_id, stream.id)
+        # Moderator maps to "may administer this channel", not to "whoever
+        # clicked first", which is what default Jitsi would otherwise do.
+        is_moderator = is_moderator or is_user_in_group(
+            stream.can_administer_channel_group_id, user
+        )
+    else:
+        assert user_ids is not None
+        # Validate every recipient is a real, reachable account in this realm,
+        # so a caller cannot derive a room for a conversation that could not
+        # exist.
+        for user_id in set(user_ids) - {user.id}:
+            access_user_by_id(user, user_id, allow_bots=True, for_admin=False)
+        scope = direct_message_scope(user.realm_id, [*user_ids, user.id])
+
+    epoch = unsign_jitsi_epoch(scope, epoch_token)
+    if rotate:
+        epoch += 1
+
+    room = derive_room_name(scope, epoch)
+    tenant = resolve_jitsi_tenant(user)
+
+    token = mint_jitsi_token(
+        tenant=tenant,
+        room=room,
+        group=tenant,
+        user_context=build_user_context(
+            user_id=user.id,
+            full_name=user.full_name,
+            email=user.delivery_email if user.email_address_is_realm_public() else "",
+            is_moderator=is_moderator,
+        ),
+    )
+
+    base_url = user.realm.jitsi_server_url or settings.JITSI_SERVER_URL
+    url = f"{base_url.rstrip('/')}/{tenant}/{room}"
+
+    return json_success(
+        request,
+        {
+            "url": append_url_query_string(url, urlencode({"jwt": token})),
+            "room": room,
+            "tenant": tenant,
+            "epoch_token": sign_jitsi_epoch(scope, epoch),
+        },
+    )

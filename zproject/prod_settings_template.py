@@ -800,6 +800,35 @@ SOCIAL_AUTH_SAML_SUPPORT_CONTACT = {
 ## integration, set JITSI_SERVER_URL = None.
 # JITSI_SERVER_URL = "https://jitsi.example.com"
 
+## Optional: authenticate Jitsi calls with JWTs, so that only members of the
+## conversation a call belongs to can join it.
+##
+## Without these settings, Jitsi room names are unguessable but unauthenticated:
+## anyone with the link can join. With them, Zulip mints a token scoped to a
+## single room, valid for two minutes, and Prosody enforces it.
+##
+## Requires a self-hosted Jitsi with `authentication = "token"`,
+## `allow_empty_token = false`, and the `token_verification` and
+## `token_no_wildcard` modules enabled on the MUC component.
+# JITSI_JWT_APP_ID = "zulip"
+## Then set `jitsi_jwt_app_secret` in zulip-secrets.conf to the same value as
+## Prosody's `app_secret`.
+##
+## For RS256 instead, set `jitsi_jwt_private_key` in zulip-secrets.conf and:
+# JITSI_JWT_KEY_ID = "zulip-jitsi-2026-07"
+## Prosody's `asap_key_server` is a static file server, NOT a JWKS endpoint: it
+## fetches a file named sha256(JITSI_JWT_KEY_ID) + ".pem" from under that base
+## URL. Pointing it at an identity provider's JWKS URL will not work.
+##
+## Set `jitsi_room_key` in zulip-secrets.conf to a random string; it is the HMAC
+## key used to derive room names. Rotating it rotates every room at once.
+##
+## Tenant-style URLs (https://jitsi.example/TENANT/ROOM) isolate teams from each
+## other in Prosody rather than by convention. Tenants are resolved from Zulip
+## user group membership, falling back to the realm subdomain.
+# JITSI_DEFAULT_TENANT = "engineering"
+# JITSI_TENANT_BY_GROUP = {"conf-engineering": "engineering", "conf-design": "design"}
+
 ## Controls the BigBlueButton video call integration.  You must also
 ## set big_blue_button_secret in zulip-secrets.conf.
 # BIG_BLUE_BUTTON_URL = "https://bbb.example.com/bigbluebutton/"
