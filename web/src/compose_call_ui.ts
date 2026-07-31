@@ -4,6 +4,7 @@ import * as z from "zod/mini";
 import * as channel from "./channel.ts";
 import * as compose_banner from "./compose_banner.ts";
 import * as compose_call from "./compose_call.ts";
+import * as compose_state from "./compose_state.ts";
 import {compose_call_session_manager} from "./compose_call_session.ts";
 import {get_recipient_label} from "./compose_closed_ui.ts";
 import * as compose_ui from "./compose_ui.ts";
@@ -244,6 +245,42 @@ export function generate_and_insert_audio_or_video_call_link(
                 break;
             }
             case available_providers.jitsi_meet?.id: {
+                if (realm.server_jitsi_jwt_enabled) {
+                    /*  With JWT authentication configured, the room name and the
+                        token are minted by the server, which is the only place
+                        that can check whether this user is actually a member of
+                        the conversation the call belongs to. */
+                    const request: {stream_id?: number; user_ids?: string} = {};
+                    if (compose_state.get_message_type() === "stream") {
+                        request.stream_id = compose_state.stream_id();
+                    } else {
+                        request.user_ids = JSON.stringify(
+                            compose_state.private_message_recipient_ids(),
+                        );
+                    }
+
+                    const handle_success = (response: unknown): void => {
+                        const callback = (): void => {
+                            const data = call_response_schema.parse(response);
+                            const url = new URL(data.url);
+                            url.hash = `config.startWithVideoMuted=${is_audio_call ? "true" : "false"}`;
+                            if (is_audio_call) {
+                                insert_audio_call_url(url.toString(), $target_textarea);
+                            } else {
+                                insert_video_call_url(url.toString(), $target_textarea);
+                            }
+                        };
+                        compose_call_session.maybe_run_xhr_callback(xhr, callback);
+                    };
+
+                    xhr = channel.post({
+                        url: "/json/calls/jitsi/create",
+                        data: request,
+                        success: handle_success,
+                    });
+                    break;
+                }
+
                 const video_call_id = util.random_int(100000000000000, 999999999999999);
                 const video_call_url = compose_call.get_jitsi_server_url(video_call_id.toString());
                 if (video_call_url === null) {
