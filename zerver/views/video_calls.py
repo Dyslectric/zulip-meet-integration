@@ -867,6 +867,7 @@ def notify_conferencing_service(user, *, scope, room, tenant, stream_id):
             },
             headers={"Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"},
             timeout=2,
+            proxies={"http": None, "https": None},
         )
     except Exception:
         logger.warning("could not notify conferencing service of call in %s", room, exc_info=True)
