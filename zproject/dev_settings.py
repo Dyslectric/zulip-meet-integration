@@ -3,6 +3,7 @@ import pwd
 
 from scripts.lib.zulip_tools import deport
 from zproject.settings_types import SCIMConfigDict
+from .config import get_secret
 
 ZULIP_ADMINISTRATOR = "desdemona+admin@zulip.com"
 
@@ -259,6 +260,6 @@ JITSI_JWT_APP_ID = "zulip"
 JITSI_DEFAULT_TENANT = "root"
 
 JITSI_CONFERENCING_URL = "http://192.168.16.6:8080"   # reachable from Zulip
-JITSI_CONFERENCING_SECRET = get_secret("jitsi_conferencing_secret", "")
+#JITSI_CONFERENCING_SECRET = get_secret("jitsi_conferencing_secret", "")
 JITSI_CALL_TOPIC = "Calls"
 
