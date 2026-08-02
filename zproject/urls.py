@@ -266,6 +266,7 @@ from zerver.views.video_calls import (
     complete_webex_user,
     complete_zoom_user,
     create_jitsi_call,
+    get_jitsi_occupancy,
     create_nextcloud_talk_url,
     deauthorize_zoom_user,
     get_bigbluebutton_url,
@@ -605,6 +606,7 @@ v1_api_and_json_patterns = [
     # Used to generate a Nextcloud Talk video call URL
     rest_path("calls/nextcloud_talk/create", POST=create_nextcloud_talk_url),
     rest_path("calls/jitsi/create", POST=create_jitsi_call),
+    rest_path("calls/jitsi/occupancy", GET=get_jitsi_occupancy),
     # export/realm -> zerver.views.realm_export
     rest_path("export/realm", POST=export_realm, GET=get_realm_exports),
     rest_path("export/realm/<int:export_id>", DELETE=delete_realm_export),

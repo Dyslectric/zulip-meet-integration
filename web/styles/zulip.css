@@ -2614,7 +2614,11 @@ body:not(.spectator-view) {
 }
 
 .jitsi-occupancy-row {
-    padding: 4px 12px;
-    white-space: nowrap;
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 12px; white-space: nowrap;
+}
+.jitsi-occupancy-avatar {
+    width: 20px; height: 20px; border-radius: 4px;
+    object-fit: cover; flex: none;
 }
 

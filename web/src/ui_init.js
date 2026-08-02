@@ -496,31 +496,66 @@ export async function initialize_everything(state_data) {
             },
         });
     });
-    function jitsi_render_occupancy() {
-        const $el = $(".jitsi-occupancy");
-        if ($el.length === 0) {
+
+    // Occupancy widget: real per-channel roster with avatars. Fetches immediately
+    // when the channel changes, then refreshes gently while you stay in it.
+    let jitsi_occupancy_stream_id;
+    let jitsi_occupancy_last_fetch = 0;
+
+    function jitsi_fetch_occupancy(stream_id) {
+        void channel.get({
+            url: "/json/calls/jitsi/occupancy",
+            data: {stream_id},
+            success(response) {
+                const $el = $(".jitsi-occupancy");
+                if ($el.length === 0 || narrow_state.stream_id() !== stream_id) {
+                    return; // narrow changed while the request was in flight
+                }
+                const count = response.count || 0;
+                if (!response.active || count === 0) {
+                    $el.addClass("hide");
+                    return;
+                }
+                $el.removeClass("hide");
+                $el.find(".jitsi-occupancy-count").text(count);
+                const $list = $el.find(".jitsi-occupancy-list").empty();
+                const people = response.drifted ? [] : (response.occupants || []);
+                if (people.length === 0) {
+                    $("<div>").addClass("jitsi-occupancy-row").text(count + " in the call").appendTo($list);
+                    return;
+                }
+                for (const person of people) {
+                    const $row = $("<div>").addClass("jitsi-occupancy-row");
+                    if (person.user_id) {
+                        $("<img>")
+                            .addClass("jitsi-occupancy-avatar")
+                            .attr("src", "/avatar/" + person.user_id + "/medium")
+                            .appendTo($row);
+                    }
+                    $("<span>").text(person.name).appendTo($row);
+                    $row.appendTo($list);
+                }
+            },
+        });
+    }
+
+    function jitsi_occupancy_tick() {
+        const stream_id = narrow_state.stream_id();
+        if (stream_id === undefined) {
+            $(".jitsi-occupancy").addClass("hide");
+            jitsi_occupancy_stream_id = undefined;
             return;
         }
-        // MOCK until phase 3 pushes real occupancy: pretend channels have an
-        // active call, DMs don't, so we can see both states. Replace this one
-        // function with the real per-room store later.
-        const people =
-            narrow_state.stream_id() !== undefined
-                ? ["Ada Lovelace", "Alan Turing", "Grace Hopper"]
-                : [];
-        if (people.length === 0) {
-            $el.addClass("hide");
-            return;
-        }
-        $el.removeClass("hide");
-        $el.find(".jitsi-occupancy-count").text(people.length);
-        const $list = $el.find(".jitsi-occupancy-list").empty();
-        for (const name of people) {
-            $("<div>").addClass("jitsi-occupancy-row").text(name).appendTo($list);
+        const now = Date.now();
+        if (stream_id !== jitsi_occupancy_stream_id || now - jitsi_occupancy_last_fetch >= 5000) {
+            jitsi_occupancy_stream_id = stream_id;
+            jitsi_occupancy_last_fetch = now;
+            jitsi_fetch_occupancy(stream_id);
         }
     }
-    jitsi_render_occupancy();
-    window.setInterval(jitsi_render_occupancy, 750);
+    jitsi_occupancy_tick();
+    window.setInterval(jitsi_occupancy_tick, 300);
+
     mouse_drag.initialize();
     sidebar_ui.restore_sidebar_toggle_status();
     i18n.initialize({language_list: page_params.language_list});
