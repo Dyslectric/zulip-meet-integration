@@ -841,6 +841,35 @@ def unsign_jitsi_epoch(scope: str, epoch_token: str | None) -> int:
         raise JsonableError(_("Invalid epoch token"))
     return epoch
 
+logger = logging.getLogger(__name__)
+
+
+def notify_conferencing_service(user, *, scope, room, tenant, stream_id):
+    """Best-effort: tell the conferencing service a call was minted.
+
+    The service owns the call message and occupancy roster but can't reverse a
+    room name (a one-way HMAC) back to a conversation — the mint is the only
+    place that knows. Errors are swallowed so a down service never breaks a call.
+    Channel calls only for now (a DM would need the bot inside the DM).
+    """
+    url = getattr(settings, "JITSI_CONFERENCING_URL", None)
+    if not url or stream_id is None:
+        return
+    try:
+        requests.post(
+            url.rstrip("/") + "/api/v1/jitsi/calls/created",
+            json={
+                "room": room, "tenant": tenant, "scope": scope,
+                "realm_id": user.realm_id, "realm_subdomain": user.realm.subdomain,
+                "stream_id": stream_id, "initiator_id": user.id,
+                "initiator_name": user.full_name,
+                "topic": getattr(settings, "JITSI_CALL_TOPIC", "Calls"),
+            },
+            headers={"Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"},
+            timeout=2,
+        )
+    except Exception:
+        logger.warning("could not notify conferencing service of call in %s", room, exc_info=True)
 
 @typed_endpoint
 def create_jitsi_call(
@@ -905,6 +934,7 @@ def create_jitsi_call(
     base_url = user.realm.jitsi_server_url or settings.JITSI_SERVER_URL
     url = f"{base_url.rstrip('/')}/{tenant}/{room}"
 
+    notify_conferencing_service(user, scope=scope, room=room, tenant=tenant, stream_id=stream_id)
     return json_success(
         request,
         {

@@ -257,3 +257,8 @@ RATE_LIMITING_RULES = {
 JITSI_SERVER_URL = "https://meet.zulip.davig01.net"
 JITSI_JWT_APP_ID = "zulip"
 JITSI_DEFAULT_TENANT = "root"
+
+JITSI_CONFERENCING_URL = "http://192.168.16.6:8080"   # reachable from Zulip
+JITSI_CONFERENCING_SECRET = get_secret("jitsi_conferencing_secret", "")
+JITSI_CALL_TOPIC = "Calls"
+
