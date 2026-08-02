@@ -2567,3 +2567,54 @@ body:not(.spectator-view) {
         outline: none;
     }
 }
+
+#jitsi-call-controls {
+    position: absolute;
+    top: 0;
+    right: var(--search-box-width);
+    height: var(--header-height);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    z-index: 2;
+}
+
+.jitsi-occupancy {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    opacity: 0.75;
+    cursor: default;
+}
+
+.jitsi-occupancy.hide {
+    display: none;
+}
+
+.jitsi-occupancy-list {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 160px;
+    padding: 6px 0;
+    background: var(--color-background, #fff);
+    color: var(--color-text-default, inherit);
+    border: 1px solid var(--color-border-default, #ccc);
+    border-radius: 6px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    text-align: left;
+}
+
+.jitsi-occupancy:hover .jitsi-occupancy-list {
+    display: block;
+}
+
+.jitsi-occupancy-row {
+    padding: 4px 12px;
+    white-space: nowrap;
+}
+

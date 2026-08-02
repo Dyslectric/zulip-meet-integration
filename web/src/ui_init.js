@@ -475,6 +475,52 @@ export async function initialize_everything(state_data) {
        user_settings before setting the theme. Because information
        density is so fundamental, we initialize that first, however. */
     initialize_user_settings(state_data.user_settings);
+    $("body").on("click", ".jitsi-call-button", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const stream_id = narrow_state.stream_id();
+        const pm_ids = narrow_state.pm_ids();
+        let data;
+        if (stream_id !== undefined) {
+            data = {stream_id};
+        } else if (pm_ids !== undefined && pm_ids.length > 0) {
+            data = {user_ids: JSON.stringify(pm_ids)};
+        } else {
+            return;
+        }
+        void channel.post({
+            url: "/json/calls/jitsi/create",
+            data,
+            success(response) {
+                window.open(response.url, "_blank", "noopener,noreferrer");
+            },
+        });
+    });
+    function jitsi_render_occupancy() {
+        const $el = $(".jitsi-occupancy");
+        if ($el.length === 0) {
+            return;
+        }
+        // MOCK until phase 3 pushes real occupancy: pretend channels have an
+        // active call, DMs don't, so we can see both states. Replace this one
+        // function with the real per-room store later.
+        const people =
+            narrow_state.stream_id() !== undefined
+                ? ["Ada Lovelace", "Alan Turing", "Grace Hopper"]
+                : [];
+        if (people.length === 0) {
+            $el.addClass("hide");
+            return;
+        }
+        $el.removeClass("hide");
+        $el.find(".jitsi-occupancy-count").text(people.length);
+        const $list = $el.find(".jitsi-occupancy-list").empty();
+        for (const name of people) {
+            $("<div>").addClass("jitsi-occupancy-row").text(name).appendTo($list);
+        }
+    }
+    jitsi_render_occupancy();
+    window.setInterval(jitsi_render_occupancy, 750);
     mouse_drag.initialize();
     sidebar_ui.restore_sidebar_toggle_status();
     i18n.initialize({language_list: page_params.language_list});

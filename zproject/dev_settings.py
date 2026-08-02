@@ -253,3 +253,7 @@ RATE_LIMITING_RULES = {
         (86400, 1000),
     ],
 }
+
+JITSI_SERVER_URL = "https://meet.zulip.davig01.net"
+JITSI_JWT_APP_ID = "zulip"
+JITSI_DEFAULT_TENANT = "root"

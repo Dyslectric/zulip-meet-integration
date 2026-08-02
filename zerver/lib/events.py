@@ -20,6 +20,7 @@ from zerver.actions.realm_settings import (
 from zerver.actions.saved_snippets import do_get_saved_snippets
 from zerver.actions.user_settings import do_change_user_setting
 from zerver.actions.users import get_owned_bot_dicts
+from zerver.lib.jitsi_token import jitsi_jwt_is_configured
 from zerver.lib import emoji
 from zerver.lib.alert_words import user_alert_words
 from zerver.lib.avatar import avatar_url

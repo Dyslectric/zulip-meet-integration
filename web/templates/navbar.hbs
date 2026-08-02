@@ -22,6 +22,16 @@
                 <div class="top-navbar-container">
                     <div id="message_view_header" class="notdisplayed">
                     </div>
+                    <div id="jitsi-call-controls" class="hidden-for-spectators">
+                        <div class="jitsi-occupancy hide">
+                            <i class="zulip-icon zulip-icon-user-list" aria-hidden="true"></i>
+                            <span class="jitsi-occupancy-count">0</span>
+                            <div class="jitsi-occupancy-list"></div>
+                        </div>
+                        <a class="jitsi-call-button header-button tippy-zulip-delayed-tooltip" tabindex="0" role="button" aria-label="{{t 'Start call' }}" data-tippy-content="{{t 'Start a call in this conversation' }}">
+                            <i class="zulip-icon zulip-icon-video-call" aria-hidden="true"></i>
+                        </a>
+                    </div>
                     <div id="searchbox">
                         <form id="searchbox_form" class="navbar-search">
                             <div id="searchbox-input-container" class="input-append pill-container" tabindex="0" role="search" aria-label="{{t 'Search' }}">
