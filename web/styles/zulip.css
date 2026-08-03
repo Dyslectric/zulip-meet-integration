@@ -1076,12 +1076,20 @@ div.focused-message-list.is-conversation-view .recipient_row {
 .top-navbar-container {
     /* Calculate right margin so that title and description
        elements can truncate and not collide with or run underneath
-       with the search section. */
+       the search section — or the Jitsi call controls, which are
+       absolutely positioned just to the left of the search box. */
     margin-right: calc(
-        var(--search-box-width) + var(--navbar-content-righthand-offset)
+        var(--search-box-width) + var(--navbar-content-righthand-offset) +
+            var(--jitsi-call-controls-reserve, 2.25em)
     );
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* A live call adds the occupancy widget (icon + count) alongside the
+   call button, so reserve a little more room for the header to clear. */
+.top-navbar-container:has(.jitsi-occupancy:not(.hide)) {
+    --jitsi-call-controls-reserve: 5em;
 }
 
 .top-navbar-container-allow-description-extension {
@@ -2580,6 +2588,13 @@ body:not(.spectator-view) {
     z-index: 2;
 }
 
+/* When the search box is expanded it fills the whole navbar (width: 100%);
+   the narrow description is hidden in that state, so hide the call controls
+   too instead of letting them stack on top of the search box. */
+.top-navbar-container:has(.navbar-search.expanded) #jitsi-call-controls {
+    display: none;
+}
+
 .jitsi-occupancy {
     position: relative;
     display: flex;
@@ -2614,11 +2629,16 @@ body:not(.spectator-view) {
 }
 
 .jitsi-occupancy-row {
-    display: flex; align-items: center; gap: 6px;
-    padding: 4px 12px; white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    white-space: nowrap;
 }
 .jitsi-occupancy-avatar {
-    width: 20px; height: 20px; border-radius: 4px;
-    object-fit: cover; flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex: none;
 }
-
