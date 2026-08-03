@@ -844,24 +844,31 @@ def unsign_jitsi_epoch(scope: str, epoch_token: str | None) -> int:
 logger = logging.getLogger(__name__)
 
 
-def notify_conferencing_service(user, *, scope, room, tenant, stream_id):
+def notify_conferencing_service(user, *, scope, room, tenant, stream_id, user_ids=None):
     """Best-effort: tell the conferencing service a call was minted.
 
     The service owns the call message and occupancy roster but can't reverse a
     room name (a one-way HMAC) back to a conversation — the mint is the only
     place that knows. Errors are swallowed so a down service never breaks a call.
-    Channel calls only for now (a DM would need the bot inside the DM).
+    Channel and DM/group calls are both notified now: under the core-hook design
+    the service posts a DM/group message authored as the initiator (see
+    zerver/views/jitsi_hook.py), so it lands in the real conversation. For a DM we
+    send the full participant set (initiator included) for the service to post.
     """
     url = getattr(settings, "JITSI_CONFERENCING_URL", None)
-    if not url or stream_id is None:
+    if not url:
         return
+    participants = None
+    if stream_id is None:
+        participants = sorted(set(user_ids or []) | {user.id})
     try:
         requests.post(
             url.rstrip("/") + "/api/v1/jitsi/calls/created",
             json={
                 "room": room, "tenant": tenant, "scope": scope,
                 "realm_id": user.realm_id, "realm_subdomain": user.realm.subdomain,
-                "stream_id": stream_id, "initiator_id": user.id,
+                "stream_id": stream_id, "user_ids": participants,
+                "initiator_id": user.id,
                 "initiator_name": user.full_name,
                 "topic": getattr(settings, "JITSI_CALL_TOPIC", "Calls"),
             },
@@ -935,7 +942,9 @@ def create_jitsi_call(
     base_url = user.realm.jitsi_server_url or settings.JITSI_SERVER_URL
     url = f"{base_url.rstrip('/')}/{tenant}/{room}"
 
-    notify_conferencing_service(user, scope=scope, room=room, tenant=tenant, stream_id=stream_id)
+    notify_conferencing_service(
+        user, scope=scope, room=room, tenant=tenant, stream_id=stream_id, user_ids=user_ids
+    )
     return json_success(
         request,
         {

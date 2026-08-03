@@ -262,6 +262,7 @@ from zerver.views.users import (
     update_user_by_email_api,
     update_user_by_id_api,
 )
+from zerver.views.jitsi_hook import jitsi_hook_send, jitsi_hook_update
 from zerver.views.video_calls import (
     complete_webex_user,
     complete_zoom_user,
@@ -778,6 +779,15 @@ urls: list[URLPattern | URLResolver] = list(i18n_urls)
 urls += [
     path("api/v1/", include(v1_api_and_json_patterns)),
     path("json/", include(v1_api_and_json_patterns)),
+]
+
+# Internal core message hook for the conferencing service (jitsi_hook.py):
+# it posts/edits call messages via Zulip's internal send/edit functions. NOT
+# under api/v1 or json — these carry their own constant-time bearer auth
+# (JITSI_CONFERENCING_SECRET) and must never be session/API-key reachable.
+urls += [
+    path("api/internal/jitsi/message", jitsi_hook_send),
+    path("api/internal/jitsi/message/update", jitsi_hook_update),
 ]
 
 # user_uploads -> zerver.views.upload.serve_file_backend
