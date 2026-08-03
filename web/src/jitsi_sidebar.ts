@@ -42,7 +42,22 @@ type SidebarOccupancy = {
     drifted: boolean;
 };
 
-const POLL_MS = 3000;
+// A pushed jitsi_occupancy server event (one channel's live roster).
+const pushed_occupancy_schema = z.object({
+    stream_id: z.number(),
+    active: z.boolean(),
+    count: z.number(),
+    occupants: z.array(
+        z.object({
+            name: z.string(),
+            user_id: z.nullable(z.number()),
+        }),
+    ),
+});
+
+// The push (a jitsi_occupancy server event → apply_pushed_occupancy) is the fast
+// path; this poll is only a slow safety net that heals any missed event.
+const POLL_MS = 15000;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 let poll_interval_id: number | undefined;
@@ -83,6 +98,23 @@ function ingest(raw: unknown): void {
             occupancy_by_stream.set(room.stream_id, room);
         }
     }
+}
+
+// A pushed jitsi_occupancy client event: an instant update for one channel, so the
+// sidebar reflects a join/leave without waiting for the poll. `active: false` means
+// the call ended → drop the row.
+export function apply_pushed_occupancy(event: unknown): void {
+    const parsed = pushed_occupancy_schema.safeParse(event);
+    if (!parsed.success) {
+        return;
+    }
+    const data = parsed.data;
+    if (data.active) {
+        occupancy_by_stream.set(data.stream_id, {...data, drifted: false});
+    } else {
+        occupancy_by_stream.delete(data.stream_id);
+    }
+    apply();
 }
 
 // Reconcile every stream row against the current occupancy: augment the ones with
@@ -174,6 +206,9 @@ function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccu
 
     const speaking_name = speaking_by_stream.get(stream_id);
     for (const person of occupancy.occupants) {
+        const row = document.createElement("div");
+        row.className = "jitsi-sidebar-occupant";
+
         const avatar = document.createElement("span");
         avatar.className = "jitsi-sidebar-avatar";
         avatar.title = person.name;
@@ -189,7 +224,14 @@ function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccu
             // No Zulip id: a nameless initial, never an avatar request that 404s.
             avatar.textContent = [...person.name][0]?.toUpperCase() ?? "?";
         }
-        container.append(avatar);
+        row.append(avatar);
+
+        const name = document.createElement("span");
+        name.className = "jitsi-sidebar-name";
+        name.textContent = person.name;
+        row.append(name);
+
+        container.append(row);
     }
 }
 

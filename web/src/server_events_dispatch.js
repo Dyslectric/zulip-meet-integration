@@ -26,6 +26,7 @@ import * as gif_state from "./gif_state.ts";
 import * as inbox_ui from "./inbox_ui.ts";
 import * as inbox_util from "./inbox_util.ts";
 import * as information_density from "./information_density.ts";
+import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
 import * as linkifiers from "./linkifiers.ts";
 import * as message_edit from "./message_edit.ts";
@@ -234,6 +235,10 @@ export function dispatch_normal_event(event) {
             if (event.value) {
                 compose_call_session_manager.run_and_clear_callbacks_for_provider("webex");
             }
+            break;
+
+        case "jitsi_occupancy":
+            jitsi_sidebar.apply_pushed_occupancy(event);
             break;
 
         case "onboarding_steps":

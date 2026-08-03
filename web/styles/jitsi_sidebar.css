@@ -34,19 +34,35 @@
     background: var(--color-background, hsl(0deg 0% 100%));
 }
 
-/* Participant avatars beneath the channel row. Indented to sit under the channel
-   name, past the privacy icon. When the channel is selected Zulip appends its
-   topic list after this container, so topics naturally render below the avatars. */
+/* Participants beneath the channel row, one per line (avatar + name). Indented to
+   sit under the channel name, past the privacy icon. When the channel is selected
+   Zulip appends its topic list after this container, so topics render below. */
 .jitsi-sidebar-occupants {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
     gap: 3px;
     padding: 1px 6px 5px 32px;
 }
 
+.jitsi-sidebar-occupant {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0; /* let the name truncate rather than overflow the sidebar */
+}
+
+.jitsi-sidebar-name {
+    overflow: hidden;
+    font-size: 0.75em; /* 12px at 16px/em */
+    color: var(--color-text-default, inherit);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.9;
+}
+
 .jitsi-sidebar-avatar {
     display: inline-flex;
+    flex: none;
     align-items: center;
     justify-content: center;
     width: 18px;
