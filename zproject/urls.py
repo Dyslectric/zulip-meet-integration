@@ -262,7 +262,7 @@ from zerver.views.users import (
     update_user_by_email_api,
     update_user_by_id_api,
 )
-from zerver.views.jitsi_hook import jitsi_hook_send, jitsi_hook_update
+from zerver.views.jitsi_hook import jitsi_hook_occupancy, jitsi_hook_send, jitsi_hook_update
 from zerver.views.video_calls import (
     complete_webex_user,
     complete_zoom_user,
@@ -790,6 +790,7 @@ urls += [
 urls += [
     path("api/internal/jitsi/message", jitsi_hook_send),
     path("api/internal/jitsi/message/update", jitsi_hook_update),
+    path("api/internal/jitsi/occupancy", jitsi_hook_occupancy),
 ]
 
 # user_uploads -> zerver.views.upload.serve_file_backend

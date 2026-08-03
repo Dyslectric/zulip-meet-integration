@@ -66,8 +66,10 @@ from zerver.actions.message_send import (
 )
 from zerver.lib.mention import MentionBackend, MentionData
 from zerver.lib.response import json_success
+from zerver.lib.stream_subscription import get_active_subscriptions_for_stream_id
 from zerver.models import Message, Realm, Stream, UserProfile
 from zerver.models.users import get_system_bot
+from zerver.tornado.django_api import send_event_on_commit
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +283,56 @@ def _json_body(request: HttpRequest) -> dict | None:
     except ValueError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+@csrf_exempt
+def jitsi_hook_occupancy(request: HttpRequest) -> HttpResponse:
+    """POST /api/internal/jitsi/occupancy — push a channel's live occupancy to its
+    subscribers as a `jitsi_occupancy` client event, so the call-aware sidebar
+    updates the instant someone joins or leaves, with no polling.
+
+    Body (JSON): realm_id (int), stream_id (int), active (bool), count (int),
+    occupants (list of {user_id, name}). Bearer-authed like the other hook
+    endpoints; the conferencing service is the only caller.
+    """
+    if request.method != "POST":
+        return _not_found()
+    if not _authorized(request):
+        return _not_found()
+
+    data = _json_body(request)
+    if data is None:
+        return _bad_request("invalid JSON")
+    realm_id = data.get("realm_id")
+    stream_id = data.get("stream_id")
+    if not isinstance(realm_id, int) or not isinstance(stream_id, int):
+        return _bad_request("realm_id and stream_id are required")
+
+    try:
+        realm = Realm.objects.get(id=realm_id)
+        stream = Stream.objects.get(id=stream_id, realm=realm)
+    except (Realm.DoesNotExist, Stream.DoesNotExist):
+        # A call for a channel that has since gone away: nobody to notify, and not
+        # an error worth a 400.
+        return json_success(request)
+
+    subscriber_ids = list(
+        get_active_subscriptions_for_stream_id(
+            stream.id, include_deactivated_users=False
+        ).values_list("user_profile_id", flat=True)
+    )
+    if not subscriber_ids:
+        return json_success(request)
+
+    event = {
+        "type": "jitsi_occupancy",
+        "stream_id": stream.id,
+        "active": bool(data.get("active", True)),
+        "count": int(data.get("count", 0)),
+        "occupants": data.get("occupants") or [],
+    }
+    send_event_on_commit(realm, event, subscriber_ids)
+    return json_success(request)
 
 
 # ---------------------------------------------------------------------------

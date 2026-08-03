@@ -2046,6 +2046,12 @@ def apply_event(
     elif event["type"] == "restart":
         # The Tornado process restarted.  This has no effect; we ignore it.
         pass
+    elif event["type"] == "jitsi_occupancy":
+        # Live-only occupancy for the call-aware sidebar; there is no
+        # register-snapshot state to fold in (the sidebar re-fetches occupancy on
+        # load). Handled here only so a queued event during a reconnect does not
+        # trip the unknown-type assertion below.
+        pass
     elif event["type"] == "device":
         if event["op"] == "add":
             state["devices"][str(event["device_id"])] = {
