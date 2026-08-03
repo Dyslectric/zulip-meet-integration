@@ -30,6 +30,7 @@ import "../../styles/components.css";
 import "../../styles/app_components.css";
 import "../../styles/rendered_markdown.css";
 import "../../styles/zulip.css";
+import "../../styles/embedded_call.css";
 import "../../styles/message_view_header.css";
 import "../../styles/message_header.css";
 import "../../styles/message_row.css";

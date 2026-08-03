@@ -1,0 +1,117 @@
+/* Embedded, minimizable Jitsi call. See embedded_call.js.
+ *
+ * The whole minimize/restore behaviour is CSS state on #jitsi-embedded-call:
+ *   (default)    full docked panel  — bar + live iframe
+ *   .minimized   compact status bar — bar only, iframe kept in the DOM but hidden
+ *   .hidden      no call            — panel removed from view (element persists)
+ *
+ * Crucially, .minimized never removes the iframe; it only collapses the frame to
+ * zero height. Removing the iframe would leave the call. */
+
+.jitsi-embedded-call {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000; /* above the compose box and narrows, below modals */
+    display: flex;
+    flex-direction: column;
+    width: min(720px, calc(100vw - 32px));
+    height: min(520px, calc(100vh - 32px));
+    background: #1f2937;
+    color: #f9fafb;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+
+.jitsi-embedded-call.hidden {
+    display: none;
+}
+
+.jitsi-embedded-call.minimized {
+    width: min(360px, calc(100vw - 32px));
+    height: auto; /* just the bar */
+}
+
+.jec-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    line-height: 1.4;
+    background: rgba(0, 0, 0, 0.25);
+    user-select: none;
+}
+
+.jec-status {
+    font-weight: 600;
+}
+
+.jec-label,
+.jec-count {
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.jec-spacer {
+    flex: 1 1 auto;
+}
+
+.jec-btn {
+    flex: 0 0 auto;
+    padding: 3px 9px;
+    font-size: 12px;
+    color: inherit;
+    background: rgba(255, 255, 255, 0.12);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.jec-btn:hover {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.jec-leave {
+    background: #b91c1c;
+}
+
+.jec-leave:hover {
+    background: #dc2626;
+}
+
+.jec-frame {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #000;
+}
+
+/* JitsiMeetExternalAPI injects an <iframe> into .jec-frame. */
+.jec-frame iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
+/* Button visibility per state: full view offers minimize; minimized offers
+ * expand. Mute is only meaningful with the call visible. */
+.jec-restore {
+    display: none;
+}
+
+.jitsi-embedded-call.minimized .jec-frame {
+    display: none;
+}
+
+.jitsi-embedded-call.minimized .jec-restore {
+    display: inline-block;
+}
+
+.jitsi-embedded-call.minimized .jec-minimize,
+.jitsi-embedded-call.minimized .jec-mute {
+    display: none;
+}

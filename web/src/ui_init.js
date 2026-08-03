@@ -46,6 +46,7 @@ import * as dialog_widget from "./dialog_widget.ts";
 import * as drafts from "./drafts.ts";
 import * as drafts_overlay_ui from "./drafts_overlay_ui.ts";
 import * as echo from "./echo.ts";
+import {start_embedded_call} from "./embedded_call.ts";
 import * as emoji from "./emoji.ts";
 import * as emoji_picker from "./emoji_picker.ts";
 import * as emojisets from "./emojisets.ts";
@@ -492,7 +493,7 @@ export async function initialize_everything(state_data) {
             url: "/json/calls/jitsi/create",
             data,
             success(response) {
-                window.open(response.url, "_blank", "noopener,noreferrer");
+                void start_embedded_call(response.url);
             },
         });
     });
