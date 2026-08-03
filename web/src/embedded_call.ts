@@ -1,15 +1,15 @@
 // Embedded, minimizable Jitsi call inside Zulip. Track B of
 // docs/embedded-call-and-core-hook-design.md §2.
 //
-// Replaces jitsi_call.ts's `window.open(url)` with a JitsiMeetExternalAPI iframe
-// hosted INSIDE Zulip, so the user keeps chatting and navigating during the call.
-// Three rules, each load-bearing:
+// Replaces the navbar call button's `window.open(url)` (wired in ui_init.js) with
+// a JitsiMeetExternalAPI iframe hosted INSIDE Zulip, so the user keeps chatting
+// and navigating during the call. Rules, each load-bearing:
 //   1. The call container lives at the APP ROOT (document.body), never in a narrow
 //      — Zulip is a SPA and an iframe in the narrow is unmounted on channel switch,
 //      dropping the call. Created once, kept for the life of the page.
-//   2. Minimize is a CSS state change, not a DOM removal (unmounting leaves the
-//      call). Full panel <-> compact status bar.
-//   3. Single active call (v1): starting another asks to leave the current one.
+//   2. Minimize/maximize/resize are all CSS state or inline size on that one
+//      persistent element — never a DOM removal (unmounting leaves the call).
+//   3. Single active call (v1): starting another replaces the current one.
 // The in-call roster in the bar comes free from the External API events.
 
 // Minimal shape of the External API we use. The real object has far more; we type
@@ -42,8 +42,16 @@ type ActiveCall = {
 // cross-origin script-src from the CSP); fall back to the meet origin.
 const EXTERNAL_API_SAME_ORIGIN = "/external_api.js";
 
+// Panel size clamps (px) and the gap it keeps from the viewport edges.
+const EDGE_GAP = 16;
+const MIN_WIDTH = 320;
+const MIN_HEIGHT = 200;
+
 let external_api_promise: Promise<void> | null = null;
 let current: ActiveCall | null = null;
+// The inline width/height held while maximized, so restore-down returns to
+// whatever size the user had dragged the panel to.
+let saved_size: {width: string; height: string} | null = null;
 
 // -- parsing -----------------------------------------------------------------
 
@@ -105,7 +113,7 @@ async function load_external_api(domain: string): Promise<void> {
 // -- the persistent container ------------------------------------------------
 
 // Built once, lives at document.body for the life of the page. Everything is
-// created here so the rest of the module only toggles classes and text.
+// created here so the rest of the module only toggles classes and inline size.
 function ensure_container(): HTMLElement {
     const existing = document.querySelector<HTMLElement>("#jitsi-embedded-call");
     if (existing !== null) {
@@ -115,12 +123,15 @@ function ensure_container(): HTMLElement {
     root.id = "jitsi-embedded-call";
     root.className = "jitsi-embedded-call hidden";
     root.innerHTML = `
+        <div class="jec-resize" title="Drag to resize"></div>
         <div class="jec-bar">
             <span class="jec-status">In call</span>
             <span class="jec-count" title="people in the call"></span>
             <span class="jec-spacer"></span>
             <button type="button" class="jec-btn jec-mute" title="Mute / unmute">Mute</button>
             <button type="button" class="jec-btn jec-restore" title="Return to the call">Expand</button>
+            <button type="button" class="jec-btn jec-maximize" title="Fill the window">Maximize</button>
+            <button type="button" class="jec-btn jec-unmaximize" title="Back to a window">Restore</button>
             <button type="button" class="jec-btn jec-minimize" title="Keep the call, shrink it">Minimize</button>
             <button type="button" class="jec-btn jec-leave" title="Leave the call">Leave</button>
         </div>
@@ -130,10 +141,13 @@ function ensure_container(): HTMLElement {
 
     root.querySelector(".jec-minimize")!.addEventListener("click", minimize_call);
     root.querySelector(".jec-restore")!.addEventListener("click", restore_call);
+    root.querySelector(".jec-maximize")!.addEventListener("click", toggle_maximize);
+    root.querySelector(".jec-unmaximize")!.addEventListener("click", toggle_maximize);
     root.querySelector(".jec-leave")!.addEventListener("click", leave_call);
     root.querySelector(".jec-mute")!.addEventListener("click", () => {
         current?.api.executeCommand("toggleAudio");
     });
+    root.querySelector<HTMLElement>(".jec-resize")!.addEventListener("mousedown", start_resize);
     return root;
 }
 
@@ -143,8 +157,8 @@ function frame_node(): HTMLElement {
 
 // -- lifecycle ---------------------------------------------------------------
 
-// Start (or switch to) an embedded call from a join URL. Exported; call it where
-// jitsi_call.ts used to `window.open(url)`.
+// Start (or switch to) an embedded call from a join URL. Exported; called where
+// ui_init.js's .jitsi-call-button handler used to `window.open(url)`.
 export async function start_embedded_call(raw_url: string): Promise<void> {
     const {domain, room_name, jwt} = parse_jitsi_url(raw_url);
 
@@ -201,7 +215,9 @@ export function minimize_call(): void {
         return;
     }
     current.minimized = true;
-    ensure_container().classList.add("minimized");
+    const root = ensure_container();
+    root.classList.remove("maximized");
+    root.classList.add("minimized");
 }
 
 export function restore_call(): void {
@@ -210,6 +226,57 @@ export function restore_call(): void {
     }
     current.minimized = false;
     ensure_container().classList.remove("minimized");
+}
+
+// Toggle filling the whole window. Maximizing clears any inline drag-resize size
+// (so the .maximized CSS wins) and remembers it; restore-down puts it back.
+export function toggle_maximize(): void {
+    if (current === null) {
+        return;
+    }
+    const root = ensure_container();
+    if (root.classList.contains("maximized")) {
+        root.classList.remove("maximized");
+        root.style.width = saved_size?.width ?? "";
+        root.style.height = saved_size?.height ?? "";
+        saved_size = null;
+    } else {
+        saved_size = {width: root.style.width, height: root.style.height};
+        root.style.width = "";
+        root.style.height = "";
+        current.minimized = false;
+        root.classList.remove("minimized");
+        root.classList.add("maximized");
+    }
+}
+
+// Drag the top-left corner to resize. The panel is anchored bottom-right, so its
+// size is just the distance from the pointer to that fixed corner.
+function start_resize(event: MouseEvent): void {
+    if (current === null) {
+        return;
+    }
+    const root = ensure_container();
+    if (root.classList.contains("minimized") || root.classList.contains("maximized")) {
+        return; // only the normal docked panel is resizable
+    }
+    event.preventDefault();
+    // Disable the iframe's pointer events during the drag, or it swallows the
+    // mousemoves and the resize stalls the moment the pointer is over the video.
+    root.classList.add("resizing");
+    const on_move = (move: MouseEvent): void => {
+        const width = window.innerWidth - EDGE_GAP - move.clientX;
+        const height = window.innerHeight - EDGE_GAP - move.clientY;
+        root.style.width = `${Math.max(MIN_WIDTH, Math.min(width, window.innerWidth - 2 * EDGE_GAP))}px`;
+        root.style.height = `${Math.max(MIN_HEIGHT, Math.min(height, window.innerHeight - 2 * EDGE_GAP))}px`;
+    };
+    const on_up = (): void => {
+        root.classList.remove("resizing");
+        document.removeEventListener("mousemove", on_move);
+        document.removeEventListener("mouseup", on_up);
+    };
+    document.addEventListener("mousemove", on_move);
+    document.addEventListener("mouseup", on_up);
 }
 
 export function leave_call(): void {
@@ -238,7 +305,7 @@ function dispose_current(): void {
 
 function show_container(): void {
     const root = ensure_container();
-    root.classList.remove("hidden", "minimized");
+    root.classList.remove("hidden", "minimized", "maximized");
     update_count();
 }
 
@@ -246,9 +313,10 @@ function hide_container(): void {
     const root = document.querySelector<HTMLElement>("#jitsi-embedded-call");
     if (root !== null) {
         root.classList.add("hidden");
-        root.classList.remove("minimized");
+        root.classList.remove("minimized", "maximized", "resizing");
         root.querySelector(".jec-frame")!.replaceChildren(); // drop the disposed iframe
     }
+    saved_size = null;
 }
 
 function update_count(): void {

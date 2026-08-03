@@ -1,12 +1,14 @@
-/* Embedded, minimizable Jitsi call. See embedded_call.js.
+/* Embedded, minimizable Jitsi call. See embedded_call.ts.
  *
- * The whole minimize/restore behaviour is CSS state on #jitsi-embedded-call:
- *   (default)    full docked panel  — bar + live iframe
+ * State lives on #jitsi-embedded-call as classes + inline width/height:
+ *   (default)    docked panel; drag the top-left corner to resize
  *   .minimized   compact status bar — bar only, iframe kept in the DOM but hidden
+ *   .maximized   fills the viewport
+ *   .resizing    a drag is in progress (iframe pointer events off)
  *   .hidden      no call            — panel removed from view (element persists)
  *
- * Crucially, .minimized never removes the iframe; it only collapses the frame to
- * zero height. Removing the iframe would leave the call. */
+ * Crucially, none of these ever remove the iframe from the DOM — that would leave
+ * the call. Minimize only collapses the frame; maximize/resize only change size. */
 
 .jitsi-embedded-call {
     position: fixed;
@@ -31,6 +33,18 @@
 .jitsi-embedded-call.minimized {
     width: min(360px, calc(100vw - 32px));
     height: auto; /* just the bar */
+}
+
+/* Maximized: fill the viewport. More specific than the base rule; JS also clears
+   any inline drag-resize width/height so this wins. */
+.jitsi-embedded-call.maximized {
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: auto;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
 }
 
 .jec-bar {
@@ -97,9 +111,12 @@
     display: block;
 }
 
-/* Button visibility per state: full view offers minimize; minimized offers
- * expand. Mute is only meaningful with the call visible. */
-.jec-restore {
+/* Button visibility per state:
+ *   default    → mute, maximize, minimize, leave  (+ resize handle)
+ *   .minimized → expand, leave
+ *   .maximized → mute, restore-down, minimize, leave */
+.jec-restore,
+.jec-unmaximize {
     display: none;
 }
 
@@ -112,6 +129,40 @@
 }
 
 .jitsi-embedded-call.minimized .jec-minimize,
-.jitsi-embedded-call.minimized .jec-mute {
+.jitsi-embedded-call.minimized .jec-mute,
+.jitsi-embedded-call.minimized .jec-maximize {
     display: none;
+}
+
+.jitsi-embedded-call.maximized .jec-maximize {
+    display: none;
+}
+
+.jitsi-embedded-call.maximized .jec-unmaximize {
+    display: inline-block;
+}
+
+/* Drag-to-resize grabber at the top-left corner (the panel is anchored
+   bottom-right, so that is the corner that moves). Normal docked panel only. */
+.jec-resize {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    z-index: 1;
+    cursor: nwse-resize;
+    border-top: 2px solid rgba(255, 255, 255, 0.45);
+    border-left: 2px solid rgba(255, 255, 255, 0.45);
+    border-top-left-radius: 8px;
+}
+
+.jitsi-embedded-call.minimized .jec-resize,
+.jitsi-embedded-call.maximized .jec-resize {
+    display: none;
+}
+
+/* During a resize drag, the iframe must not swallow the mousemoves. */
+.jitsi-embedded-call.resizing .jec-frame {
+    pointer-events: none;
 }
