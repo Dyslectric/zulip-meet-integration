@@ -1,0 +1,226 @@
+// Call-aware left sidebar. Polls the bulk occupancy feed
+// (GET /json/calls/jitsi/occupancy_all) and augments each channel row that has a
+// live call: swaps its privacy glyph for a speaker (with a lock overlay for
+// private channels) and shows the participants' avatars beneath the row.
+//
+// The augmentation is re-applied on every poll, so it self-heals after Zulip
+// re-renders the stream list (which would otherwise wipe our injected nodes).
+//
+// The speaking ring is driven separately, through set_speaking(), by the
+// embedded call — occupancy only carries join/leave, never who is talking, so a
+// glow is possible only for the one call you are actually in (its Jitsi
+// dominant-speaker events). Every other channel shows avatars without a glow.
+
+import {$} from "jquery";
+import * as z from "zod/mini";
+
+import * as channel from "./channel.ts";
+import * as sub_store from "./sub_store.ts";
+
+const occupancy_all_schema = z.object({
+    rooms: z.array(
+        z.object({
+            stream_id: z.number(),
+            active: z.boolean(),
+            count: z.number(),
+            occupants: z.array(
+                z.object({
+                    name: z.string(),
+                    user_id: z.nullable(z.number()),
+                }),
+            ),
+            drifted: z.boolean(),
+        }),
+    ),
+});
+
+type SidebarOccupancy = {
+    stream_id: number;
+    active: boolean;
+    count: number;
+    occupants: {name: string; user_id: number | null}[];
+    drifted: boolean;
+};
+
+const POLL_MS = 3000;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+let poll_interval_id: number | undefined;
+// Latest occupancy for each channel with a live call.
+const occupancy_by_stream = new Map<number, SidebarOccupancy>();
+// The current speaker's display name for the one call we are in, keyed by the
+// channel it belongs to. A name (not a user id) because the Jitsi External API
+// reports the dominant speaker by display name, and the occupant avatars carry
+// that same name. Empty for every channel we are only observing.
+const speaking_by_stream = new Map<number, string>();
+
+export function initialize(): void {
+    if (poll_interval_id !== undefined) {
+        return;
+    }
+    poll();
+    poll_interval_id = window.setInterval(poll, POLL_MS);
+}
+
+function poll(): void {
+    void channel.get({
+        url: "/json/calls/jitsi/occupancy_all",
+        success(raw: unknown): void {
+            ingest(raw);
+            apply();
+        },
+    });
+}
+
+function ingest(raw: unknown): void {
+    occupancy_by_stream.clear();
+    const parsed = occupancy_all_schema.safeParse(raw);
+    if (!parsed.success) {
+        return;
+    }
+    for (const room of parsed.data.rooms) {
+        if (room.active) {
+            occupancy_by_stream.set(room.stream_id, room);
+        }
+    }
+}
+
+// Reconcile every stream row against the current occupancy: augment the ones with
+// a live call, strip the augmentation from the ones without. Idempotent.
+function apply(): void {
+    for (const li of $("#stream_filters .narrow-filter")) {
+        const $li = $(li);
+        const stream_id = Number.parseInt($li.attr("data-stream-id") ?? "", 10);
+        const occupancy = Number.isNaN(stream_id) ? undefined : occupancy_by_stream.get(stream_id);
+        if (occupancy === undefined) {
+            clear_row($li);
+        } else {
+            augment_row($li, stream_id, occupancy);
+        }
+    }
+}
+
+// A loudspeaker, built as SVG so it needs no addition to the icon font and
+// inherits currentColor (the channel's existing privacy color).
+function make_speaker_icon(): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.classList.add("jitsi-call-speaker-icon");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    const body = document.createElementNS(SVG_NS, "path");
+    body.setAttribute("d", "M8.5 2.4 4.7 5.4H2.2v5.2h2.5l3.8 3z");
+    body.setAttribute("fill", "currentColor");
+    svg.append(body);
+    for (const d of ["M11 5.6a3.2 3.2 0 0 1 0 4.8", "M12.7 3.8a5.6 5.6 0 0 1 0 8.4"]) {
+        const wave = document.createElementNS(SVG_NS, "path");
+        wave.setAttribute("d", d);
+        wave.setAttribute("fill", "none");
+        wave.setAttribute("stroke", "currentColor");
+        wave.setAttribute("stroke-width", "1.2");
+        wave.setAttribute("stroke-linecap", "round");
+        svg.append(wave);
+    }
+    return svg;
+}
+
+function augment_row($li: JQuery, stream_id: number, occupancy: SidebarOccupancy): void {
+    const is_private = sub_store.get(stream_id)?.invite_only ?? false;
+    $li.addClass("jitsi-call-active").toggleClass("jitsi-call-private", is_private);
+    ensure_icons($li, is_private);
+    render_occupants($li, stream_id, occupancy);
+}
+
+function ensure_icons($li: JQuery, is_private: boolean): void {
+    const privacy = $li.find(".stream-privacy").first().get(0);
+    if (privacy === undefined) {
+        return;
+    }
+    if (privacy.querySelector(".jitsi-call-speaker-icon") === null) {
+        privacy.append(make_speaker_icon());
+    }
+    const lock = privacy.querySelector(".jitsi-call-lock-badge");
+    if (is_private && lock === null) {
+        const badge = document.createElement("i");
+        badge.classList.add("zulip-icon", "zulip-icon-lock", "jitsi-call-lock-badge");
+        badge.setAttribute("aria-hidden", "true");
+        privacy.append(badge);
+    } else if (!is_private && lock !== null) {
+        lock.remove();
+    }
+}
+
+function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccupancy): void {
+    let container = $li.children(".jitsi-sidebar-occupants").get(0);
+    if (container === undefined) {
+        container = document.createElement("div");
+        container.className = "jitsi-sidebar-occupants";
+        const header = $li.children(".bottom_left_row").first().get(0);
+        if (header === undefined) {
+            $li.get(0)?.append(container);
+        } else {
+            header.after(container);
+        }
+    }
+    container.replaceChildren();
+
+    // A drifted or nameless roster: an honest count chip rather than wrong avatars.
+    if (occupancy.drifted || occupancy.occupants.length === 0) {
+        const chip = document.createElement("span");
+        chip.className = "jitsi-sidebar-count";
+        chip.textContent = `${occupancy.count} in call`;
+        container.append(chip);
+        return;
+    }
+
+    const speaking_name = speaking_by_stream.get(stream_id);
+    for (const person of occupancy.occupants) {
+        const avatar = document.createElement("span");
+        avatar.className = "jitsi-sidebar-avatar";
+        avatar.title = person.name;
+        if (speaking_name !== undefined && speaking_name === person.name) {
+            avatar.classList.add("speaking");
+        }
+        if (person.user_id !== null) {
+            const img = document.createElement("img");
+            img.src = `/avatar/${person.user_id}/medium`;
+            img.alt = person.name;
+            avatar.append(img);
+        } else {
+            // No Zulip id: a nameless initial, never an avatar request that 404s.
+            avatar.textContent = [...person.name][0]?.toUpperCase() ?? "?";
+        }
+        container.append(avatar);
+    }
+}
+
+function clear_row($li: JQuery): void {
+    if (!$li.hasClass("jitsi-call-active")) {
+        return;
+    }
+    $li.removeClass("jitsi-call-active jitsi-call-private");
+    $li.find(
+        ".stream-privacy .jitsi-call-speaker-icon, .stream-privacy .jitsi-call-lock-badge",
+    ).remove();
+    $li.children(".jitsi-sidebar-occupants").remove();
+}
+
+// Called by the embedded call when the dominant speaker changes, for the one call
+// the user is in. `name` is the speaker's display name, or null when the call ends.
+// Only the matching channel's avatars are touched; every other channel has no
+// speaker data at all.
+export function set_speaking(stream_id: number, name: string | null): void {
+    if (name === null) {
+        speaking_by_stream.delete(stream_id);
+    } else {
+        speaking_by_stream.set(stream_id, name);
+    }
+    const li = document.querySelector(
+        `#stream_filters .narrow-filter[data-stream-id="${CSS.escape(String(stream_id))}"]`,
+    );
+    if (li === null) {
+        return;
+    }
+    for (const avatar of li.querySelectorAll<HTMLElement>(".jitsi-sidebar-avatar")) {
+        avatar.classList.toggle("speaking", name !== null && avatar.title === name);
+    }
+}

@@ -61,6 +61,7 @@ import * as i18n from "./i18n.ts";
 import * as inbox_ui from "./inbox_ui.ts";
 import * as information_density from "./information_density.ts";
 import * as invite from "./invite.ts";
+import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
 import * as left_sidebar_navigation_area_popovers from "./left_sidebar_navigation_area_popovers.ts";
 import * as left_sidebar_tooltips from "./left_sidebar_tooltips.ts";
@@ -482,10 +483,15 @@ export async function initialize_everything(state_data) {
         const stream_id = narrow_state.stream_id();
         const pm_ids = narrow_state.pm_ids();
         let data;
+        let label;
         if (stream_id !== undefined) {
             data = {stream_id};
+            const stream_name = narrow_state.stream_name();
+            label = stream_name === undefined ? undefined : "#" + stream_name;
         } else if (pm_ids !== undefined && pm_ids.length > 0) {
             data = {user_ids: JSON.stringify(pm_ids)};
+            const names = people.get_recipients(pm_ids.join(","));
+            label = names.length > 0 ? names.join(", ") : undefined;
         } else {
             return;
         }
@@ -493,7 +499,7 @@ export async function initialize_everything(state_data) {
             url: "/json/calls/jitsi/create",
             data,
             success(response) {
-                void start_embedded_call(response.url);
+                void start_embedded_call(response.url, {label, stream_id});
             },
         });
     });
@@ -520,9 +526,12 @@ export async function initialize_everything(state_data) {
                 $el.removeClass("hide");
                 $el.find(".jitsi-occupancy-count").text(count);
                 const $list = $el.find(".jitsi-occupancy-list").empty();
-                const people = response.drifted ? [] : (response.occupants || []);
+                const people = response.drifted ? [] : response.occupants || [];
                 if (people.length === 0) {
-                    $("<div>").addClass("jitsi-occupancy-row").text(count + " in the call").appendTo($list);
+                    $("<div>")
+                        .addClass("jitsi-occupancy-row")
+                        .text(count + " in the call")
+                        .appendTo($list);
                     return;
                 }
                 for (const person of people) {
@@ -556,6 +565,10 @@ export async function initialize_everything(state_data) {
     }
     jitsi_occupancy_tick();
     window.setInterval(jitsi_occupancy_tick, 300);
+
+    // Call-aware left sidebar: speaker/lock icons and participant avatars on
+    // channels with a live call, polled from the bulk occupancy feed.
+    jitsi_sidebar.initialize();
 
     mouse_drag.initialize();
     sidebar_ui.restore_sidebar_toggle_status();

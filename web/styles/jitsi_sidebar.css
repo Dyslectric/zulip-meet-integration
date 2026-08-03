@@ -1,0 +1,89 @@
+/* Call-aware left sidebar (Zulip Meet). Driven by web/src/jitsi_sidebar.ts, which
+   adds .jitsi-call-active (and .jitsi-call-private) to a channel row that has a
+   live call and injects the speaker icon, lock badge, and occupant avatars. */
+
+/* Replace the channel's normal privacy glyph with the injected speaker while a
+   call is live. The lock badge (private channels) is explicitly kept. */
+.narrow-filter.jitsi-call-active
+    .stream-privacy
+    .zulip-icon:not(.jitsi-call-lock-badge) {
+    display: none;
+}
+
+.narrow-filter.jitsi-call-active .stream-privacy {
+    position: relative;
+}
+
+.jitsi-call-speaker-icon {
+    /* Color comes from the paths' own fill/stroke="currentColor"; the channel's
+       privacy color (an inline `color`) carries through. */
+    width: 1em;
+    height: 1em;
+    vertical-align: middle;
+}
+
+/* Small lock over the speaker for a private channel with a live call. */
+.jitsi-call-lock-badge {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    font-size: 0.6em;
+    line-height: 1;
+    padding: 1px;
+    border-radius: 50%;
+    background: var(--color-background, hsl(0deg 0% 100%));
+}
+
+/* Participant avatars beneath the channel row. Indented to sit under the channel
+   name, past the privacy icon. When the channel is selected Zulip appends its
+   topic list after this container, so topics naturally render below the avatars. */
+.jitsi-sidebar-occupants {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px 5px 32px;
+}
+
+.jitsi-sidebar-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    overflow: hidden;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-default, inherit);
+    background: var(--color-background-tab-hover, hsl(0deg 0% 0% / 12%));
+}
+
+.jitsi-sidebar-avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Speaking ring — only ever set for the call the user is actually in. */
+.jitsi-sidebar-avatar.speaking {
+    box-shadow: 0 0 0 2px var(--color-online, hsl(147deg 52% 45%));
+    animation: jitsi-speaking-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes jitsi-speaking-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 2px var(--color-online, hsl(147deg 52% 45%));
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px var(--color-online, hsl(147deg 52% 45%));
+    }
+}
+
+.jitsi-sidebar-count {
+    font-size: 0.6875em; /* 11px at 16px/em */
+    opacity: 0.8;
+}

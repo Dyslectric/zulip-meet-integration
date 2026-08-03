@@ -30,9 +30,24 @@
     display: none;
 }
 
+/* Minimized: a compact bar. embedded_call.ts docks it under the compose box and
+   sets its left/width/bottom inline to match; the values below are the fallback
+   for views that have no compose box. (Any dragged position is stashed on
+   minimize and restored on expand — see embedded_call.ts.) */
 .jitsi-embedded-call.minimized {
+    right: auto;
+    left: 16px;
+    bottom: 16px;
     width: min(360px, calc(100vw - 32px));
     height: auto; /* just the bar */
+}
+
+/* While the call is minimized its bar docks at the bottom, directly under the
+   compose box; lift the compose box by the bar's height (set on --jec-dock-gap)
+   so the two never overlap. The message feed keeps a fixed 40%-of-viewport bottom
+   whitespace, so compose just shifts up within it — no feed resize needed. */
+body.jec-dock-minimized #compose {
+    bottom: var(--jec-dock-gap, 44px);
 }
 
 /* Maximized: fill the viewport. More specific than the base rule; JS also clears
@@ -56,6 +71,7 @@
     line-height: 1.4;
     background: rgba(0, 0, 0, 0.25);
     user-select: none;
+    cursor: move; /* the title bar drags the whole panel */
 }
 
 .jec-status {
