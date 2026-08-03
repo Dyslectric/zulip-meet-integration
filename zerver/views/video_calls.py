@@ -996,3 +996,50 @@ def get_jitsi_occupancy(
         return json_success(request, empty)
     return json_success(request, data)
 
+
+@typed_endpoint_without_parameters
+def get_jitsi_occupancy_all(
+    request: HttpRequest,
+    user: UserProfile,
+) -> HttpResponse:
+    """Occupancy of every live channel call this user can see, for the sidebar.
+
+    The sidebar shows call state across all of a user's channels at once, so it
+    asks for them in one request rather than polling each. The conferencing
+    service returns every active channel call in the deployment; this filters that
+    down to the channels this user may actually reach — `access_stream_by_id`
+    raises for one they cannot, and that room is dropped — so the response never
+    reveals a call in a channel the user has no access to. Best-effort like
+    `get_jitsi_occupancy`: an unreachable service yields an empty list, not an error.
+    """
+    empty: dict[str, Any] = {"rooms": []}
+    url = getattr(settings, "JITSI_CONFERENCING_URL", None)
+    if not url:
+        return json_success(request, empty)
+    try:
+        response = requests.get(
+            url.rstrip("/") + "/api/v1/jitsi/occupancy_all",
+            headers={
+                "Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"
+            },
+            proxies={"http": None, "https": None},
+            timeout=2,
+        )
+        data = response.json()
+    except Exception:
+        logger.warning("could not fetch bulk jitsi occupancy", exc_info=True)
+        return json_success(request, empty)
+
+    rooms = data.get("rooms", []) if isinstance(data, dict) else []
+    visible: list[dict[str, Any]] = []
+    for room in rooms:
+        stream_id = room.get("stream_id")
+        if not isinstance(stream_id, int):
+            continue
+        try:
+            access_stream_by_id(user, stream_id)
+        except JsonableError:
+            continue  # user can't reach this channel: drop its call from the feed
+        visible.append(room)
+    return json_success(request, {"rooms": visible})
+
