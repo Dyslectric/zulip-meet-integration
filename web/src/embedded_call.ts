@@ -12,14 +12,15 @@
 //   3. Single active call (v1): starting another replaces the current one.
 // The in-call roster in the bar comes free from the External API events.
 
+import * as z from "zod/mini";
+
 import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 
 // Minimal shape of the External API we use. The real object has far more; we type
 // only what we call so strict TS stays happy without a full ambient declaration.
-type JitsiEventPayload = {id?: string; displayName?: string};
 type JitsiExternalApi = {
     executeCommand: (command: string) => void;
-    addListener: (event: string, handler: (payload: JitsiEventPayload) => void) => void;
+    addListener: (event: string, handler: () => void) => void;
     dispose: () => void;
 };
 type JitsiExternalApiConstructor = new (
@@ -41,9 +42,9 @@ type ActiveCall = {
     participants: number;
     label: string | undefined;
     stream_id: number | undefined;
-    // Jitsi participant id → display name, so a dominant-speaker event (which
-    // carries only an id) maps to the name the sidebar avatars use.
-    participant_names: Map<string, string>;
+    // The meet origin host, so a speaking postMessage can be checked to have come
+    // from this call's iframe before it drives the sidebar glow.
+    domain: string;
 };
 
 // Prefer a same-origin, version-pinned copy of external_api.js (drops the
@@ -177,6 +178,8 @@ function ensure_container(): HTMLElement {
             dock_minimized_bar(root);
         }
     });
+    // Per-participant speaking arrives as a postMessage from the meet iframe.
+    window.addEventListener("message", handle_speaking_message);
     return root;
 }
 
@@ -224,7 +227,7 @@ export async function start_embedded_call(
         participants: 0,
         label: options.label,
         stream_id: options.stream_id,
-        participant_names: new Map(),
+        domain,
     };
     wire_api_events(api);
     show_container();
@@ -238,42 +241,45 @@ function wire_api_events(api: JitsiExternalApi): void {
         current.participants = Math.max(0, current.participants + delta);
         update_count();
     };
-    const record_name = (payload: JitsiEventPayload): void => {
-        if (current !== null && payload.id !== undefined && payload.displayName !== undefined) {
-            current.participant_names.set(payload.id, payload.displayName);
-        }
-    };
-    // The External API gives us the roster for free — no service round-trip.
-    api.addListener("videoConferenceJoined", (payload) => {
-        record_name(payload);
+    // The External API gives us the roster count for free — no service round-trip.
+    // Who is *speaking* comes separately, via the iframe's postMessage relay
+    // (handle_speaking_message): the External API only exposes the single dominant
+    // speaker, not per-participant audio, so it cannot drive a per-user glow.
+    api.addListener("videoConferenceJoined", () => {
         bump(1);
     });
-    api.addListener("participantJoined", (payload) => {
-        record_name(payload);
+    api.addListener("participantJoined", () => {
         bump(1);
     });
-    api.addListener("participantLeft", (payload) => {
-        if (current !== null && payload.id !== undefined) {
-            current.participant_names.delete(payload.id);
-        }
+    api.addListener("participantLeft", () => {
         bump(-1);
-    });
-    // Glow the dominant speaker's avatar in this call's channel row. The event
-    // carries only a Jitsi participant id; participant_names maps it to the display
-    // name the sidebar avatars match on. Current call only — no other channel has
-    // speaking data.
-    api.addListener("dominantSpeakerChanged", (payload) => {
-        if (current?.stream_id === undefined || payload.id === undefined) {
-            return;
-        }
-        const name = current.participant_names.get(payload.id);
-        if (name !== undefined) {
-            jitsi_sidebar.set_speaking(current.stream_id, name);
-        }
     });
     api.addListener("videoConferenceLeft", leave_call);
     // Fired when Jitsi itself wants to close (kicked, ended, hangup button).
     api.addListener("readyToClose", leave_call);
+}
+
+// The self-hosted Jitsi web build postMessages who is currently speaking (a list of
+// display names) out of the iframe, since the External API only reports the single
+// dominant speaker. Accept it only from this call's meet origin, then light up the
+// matching avatars in the call's channel. Registered once, in ensure_container.
+const speaking_message_schema = z.object({
+    source: z.literal("zulip-jitsi-speaking"),
+    speaking: z.array(z.string()),
+});
+
+function handle_speaking_message(event: MessageEvent): void {
+    if (current?.stream_id === undefined) {
+        return;
+    }
+    if (event.origin !== `https://${current.domain}`) {
+        return; // only this call's iframe may drive the glow
+    }
+    const parsed = speaking_message_schema.safeParse(event.data);
+    if (!parsed.success) {
+        return;
+    }
+    jitsi_sidebar.set_speaking(current.stream_id, parsed.data.speaking);
 }
 
 export function minimize_call(): void {
@@ -496,7 +502,7 @@ export function is_call_active(): boolean {
 function dispose_current(): void {
     if (current !== null) {
         if (current.stream_id !== undefined) {
-            jitsi_sidebar.set_speaking(current.stream_id, null); // clear any glow
+            jitsi_sidebar.set_speaking(current.stream_id, []); // clear any glow
         }
         try {
             current.api.dispose();

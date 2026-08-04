@@ -63,11 +63,12 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 let poll_interval_id: number | undefined;
 // Latest occupancy for each channel with a live call.
 const occupancy_by_stream = new Map<number, SidebarOccupancy>();
-// The current speaker's display name for the one call we are in, keyed by the
-// channel it belongs to. A name (not a user id) because the Jitsi External API
-// reports the dominant speaker by display name, and the occupant avatars carry
-// that same name. Empty for every channel we are only observing.
-const speaking_by_stream = new Map<number, string>();
+// The display names currently speaking in the one call we are in, keyed by the
+// channel it belongs to. Names (not user ids) because that is what the Jitsi web
+// relay reports and what the occupant avatars carry. A set, not one name — the
+// per-participant relay can mark several people speaking at once. Empty for every
+// channel we are only observing (there is no speaker data for those).
+const speaking_by_stream = new Map<number, Set<string>>();
 
 export function initialize(): void {
     if (poll_interval_id !== undefined) {
@@ -204,7 +205,7 @@ function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccu
         return;
     }
 
-    const speaking_name = speaking_by_stream.get(stream_id);
+    const speaking = speaking_by_stream.get(stream_id);
     for (const person of occupancy.occupants) {
         const row = document.createElement("div");
         row.className = "jitsi-sidebar-occupant";
@@ -212,7 +213,7 @@ function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccu
         const avatar = document.createElement("span");
         avatar.className = "jitsi-sidebar-avatar";
         avatar.title = person.name;
-        if (speaking_name !== undefined && speaking_name === person.name) {
+        if (speaking?.has(person.name) === true) {
             avatar.classList.add("speaking");
         }
         if (person.user_id !== null) {
@@ -246,16 +247,17 @@ function clear_row($li: JQuery): void {
     $li.children(".jitsi-sidebar-occupants").remove();
 }
 
-// Called by the embedded call when the dominant speaker changes, for the one call
-// the user is in. `name` is the speaker's display name, or null when the call ends.
-// Only the matching channel's avatars are touched; every other channel has no
-// speaker data at all.
-export function set_speaking(stream_id: number, name: string | null): void {
-    if (name === null) {
+// Called by the embedded call with the display names currently speaking in the one
+// call the user is in (empty to clear, e.g. when the call ends). Every avatar in
+// the matching channel is lit or unlit to match; other channels have no speaker
+// data at all.
+export function set_speaking(stream_id: number, names: readonly string[]): void {
+    if (names.length === 0) {
         speaking_by_stream.delete(stream_id);
     } else {
-        speaking_by_stream.set(stream_id, name);
+        speaking_by_stream.set(stream_id, new Set(names));
     }
+    const speaking = speaking_by_stream.get(stream_id);
     const li = document.querySelector(
         `#stream_filters .narrow-filter[data-stream-id="${CSS.escape(String(stream_id))}"]`,
     );
@@ -263,6 +265,6 @@ export function set_speaking(stream_id: number, name: string | null): void {
         return;
     }
     for (const avatar of li.querySelectorAll<HTMLElement>(".jitsi-sidebar-avatar")) {
-        avatar.classList.toggle("speaking", name !== null && avatar.title === name);
+        avatar.classList.toggle("speaking", speaking?.has(avatar.title) ?? false);
     }
 }
