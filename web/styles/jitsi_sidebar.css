@@ -73,6 +73,10 @@
     font-weight: 600;
     color: var(--color-text-default, inherit);
     background: var(--color-background-tab-hover, hsl(0deg 0% 0% / 12%));
+    /* The speaking ring lives here as a same-hue transparent ring, so toggling
+       .speaking just fades its alpha in and out (see below). */
+    box-shadow: 0 0 0 2px hsl(147deg 52% 45% / 0%);
+    transition: box-shadow 120ms ease-in-out;
 }
 
 .jitsi-sidebar-avatar img {
@@ -82,21 +86,11 @@
     object-fit: cover;
 }
 
-/* Speaking ring — only ever set for the call the user is actually in. */
+/* Speaking ring — only ever set for the call the user is actually in. Just bring
+   the ring's alpha up; the transition on .jitsi-sidebar-avatar fades it in, and
+   removing the class fades it back out. No pulsing. */
 .jitsi-sidebar-avatar.speaking {
-    box-shadow: 0 0 0 2px var(--color-online, hsl(147deg 52% 45%));
-    animation: jitsi-speaking-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes jitsi-speaking-pulse {
-    0%,
-    100% {
-        box-shadow: 0 0 0 2px var(--color-online, hsl(147deg 52% 45%));
-    }
-
-    50% {
-        box-shadow: 0 0 0 4px var(--color-online, hsl(147deg 52% 45%));
-    }
+    box-shadow: 0 0 0 2px hsl(147deg 52% 45% / 90%);
 }
 
 .jitsi-sidebar-count {
