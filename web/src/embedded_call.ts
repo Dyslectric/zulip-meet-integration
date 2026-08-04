@@ -166,7 +166,7 @@ function ensure_container(): HTMLElement {
     root.querySelector(".jec-restore")!.addEventListener("click", restore_call);
     root.querySelector(".jec-maximize")!.addEventListener("click", toggle_maximize);
     root.querySelector(".jec-unmaximize")!.addEventListener("click", toggle_maximize);
-    root.querySelector(".jec-leave")!.addEventListener("click", leave_call);
+    root.querySelector(".jec-leave")!.addEventListener("click", request_leave);
     root.querySelector(".jec-mute")!.addEventListener("click", () => {
         current?.api.executeCommand("toggleAudio");
     });
@@ -493,6 +493,29 @@ function start_move(event: MouseEvent): void {
 export function leave_call(): void {
     dispose_current();
     hide_container();
+}
+
+// The Leave button hangs up gracefully first: Jitsi signals the departure to the
+// server and then fires readyToClose, which runs leave_call to dispose. Disposing
+// the iframe outright (as leave_call does) tears the connection down before that
+// signal is sent, so the participant lingers in the room until a server-side
+// timeout. A fallback closes anyway if readyToClose never arrives (or hangup fails).
+export function request_leave(): void {
+    const call = current;
+    if (call === null) {
+        return;
+    }
+    try {
+        call.api.executeCommand("hangup");
+    } catch {
+        leave_call();
+        return;
+    }
+    window.setTimeout(() => {
+        if (current === call) {
+            leave_call();
+        }
+    }, 1500);
 }
 
 export function is_call_active(): boolean {
