@@ -42,6 +42,7 @@ import * as condense from "./condense.ts";
 import * as copy_messages from "./copy_messages.ts";
 import * as desktop_integration from "./desktop_integration.ts";
 import * as desktop_notifications from "./desktop_notifications.ts";
+import * as web_push from "./web_push.ts";
 import * as dialog_widget from "./dialog_widget.ts";
 import * as drafts from "./drafts.ts";
 import * as drafts_overlay_ui from "./drafts_overlay_ui.ts";
@@ -581,6 +582,11 @@ export async function initialize_everything(state_data) {
     thumbnail.initialize();
     thumbnail.set_media_preview_size_css_variable();
     widgets.initialize();
+    if (!page_params.is_spectator) {
+        // Register the service worker and subscribe to Web Push if the user
+        // has already granted notification permission.
+        void web_push.initialize();
+    }
     tippyjs.initialize();
     compose_tooltips.initialize();
     message_list_tooltips.initialize();

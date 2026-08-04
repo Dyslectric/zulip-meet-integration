@@ -116,6 +116,13 @@ from zerver.views.push_notifications import (
     send_e2ee_test_push_notification_api,
     send_test_push_notification_api,
 )
+from zerver.views.pwa import (
+    add_web_push_subscription,
+    manifest_webmanifest,
+    remove_web_push_subscription,
+    service_worker,
+    web_push_config,
+)
 from zerver.views.reactions import add_reaction, remove_reaction
 from zerver.views.read_receipts import read_receipts
 from zerver.views.realm import (
@@ -482,6 +489,12 @@ v1_api_and_json_patterns = [
         "users/me/apns_device_token", POST=add_apns_device_token, DELETE=remove_apns_device_token
     ),
     rest_path("users/me/android_gcm_reg_id", POST=add_android_reg_id, DELETE=remove_android_reg_id),
+    rest_path(
+        "users/me/web_push_subscription",
+        GET=web_push_config,
+        POST=add_web_push_subscription,
+        DELETE=remove_web_push_subscription,
+    ),
     rest_path("mobile_push/test_notification", POST=send_test_push_notification_api),
     rest_path("mobile_push/e2ee/test_notification", POST=send_e2ee_test_push_notification_api),
     rest_path("mobile_push/register", POST=register_push_device),
@@ -1040,6 +1053,12 @@ urls += [
 
 # Healthcheck URL
 urls += [path("health", health)]
+
+# PWA web app manifest (public; must be fetchable without login)
+urls += [path("manifest.webmanifest", manifest_webmanifest)]
+
+# Web Push service worker, served from the root so its scope covers the origin.
+urls += [path("service-worker.js", service_worker)]
 
 # The sequence is important; if i18n URLs don't come first then
 # reverse URL mapping points to i18n URLs which causes the frontend

@@ -18,7 +18,15 @@ from zerver.lib.queue import mobile_notifications_queue_name, queue_event_on_com
 from zerver.lib.stream_subscription import get_subscribed_stream_recipient_ids_for_user
 from zerver.lib.topic import filter_by_topic_name_via_message
 from zerver.lib.user_message import DEFAULT_HISTORICAL_FLAGS, create_historical_user_messages
-from zerver.models import Device, Message, PushDeviceToken, Recipient, UserMessage, UserProfile
+from zerver.models import (
+    Device,
+    Message,
+    PushDeviceToken,
+    Recipient,
+    UserMessage,
+    UserProfile,
+    WebPushSubscription,
+)
 from zerver.tornado.django_api import send_event_on_commit, send_event_rollback_unsafe
 
 
@@ -270,7 +278,13 @@ def do_clear_mobile_push_notifications_for_ids(
             # Uses index "zerver_device_user_push_token_id_idx".
             Device.objects.filter(
                 user_id__in=clear_notifications_user_ids, push_token_id__isnull=False
-            ).values_list("user_id", flat=True)
+            ).values_list("user_id", flat=True),
+            # A browser Web Push subscription counts as a registered device, so
+            # web-push users get a "remove" event to clear the notification
+            # rather than having the flag silently cleared here.
+            WebPushSubscription.objects.filter(
+                user_profile_id__in=clear_notifications_user_ids
+            ).values_list("user_profile_id", flat=True),
         )
     )
     push_device_not_registered_user_ids = (

@@ -56,3 +56,35 @@ class PushDeviceToken(AbstractPushDeviceToken):
                 condition=Q(kind=AbstractPushDeviceToken.FCM),
             ),
         ]
+
+
+class WebPushSubscription(models.Model):
+    """A browser Web Push subscription (RFC 8030 / RFC 8291) for a user.
+
+    The web client creates one of these after registering a service worker
+    and calling PushManager.subscribe(). A user may have many, one per
+    browser/profile they've enabled notifications in.
+    """
+
+    user_profile = models.ForeignKey(UserProfile, db_index=True, on_delete=CASCADE)
+
+    # The push service URL the browser handed us; we POST encrypted payloads
+    # to it. Unique per user, so re-subscribing updates in place.
+    endpoint = models.TextField()
+
+    # Public key and auth secret from the PushSubscription, used to encrypt
+    # message payloads so only this browser can read them (RFC 8291).
+    p256dh = models.TextField()
+    auth = models.TextField()
+
+    date_created = models.DateTimeField(auto_now_add=True)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                "user_profile",
+                "endpoint",
+                name="zerver_webpushsubscription_user_endpoint",
+            ),
+        ]

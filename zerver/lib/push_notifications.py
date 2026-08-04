@@ -1,6 +1,7 @@
 # See https://zulip.readthedocs.io/en/latest/subsystems/notifications.html
 
 import asyncio
+import base64
 import copy
 import logging
 import re
@@ -74,6 +75,7 @@ from zerver.models import (
     Stream,
     UserMessage,
     UserProfile,
+    WebPushSubscription,
 )
 from zerver.models.realms import get_fake_email_domain
 from zerver.models.scheduled_jobs import NotificationTriggers
@@ -174,6 +176,55 @@ class APNsContext:
 
 def has_apns_credentials() -> bool:
     return settings.APNS_TOKEN_KEY_FILE is not None or settings.APNS_CERT_FILE is not None
+
+
+def has_web_push_credentials() -> bool:
+    # A configured VAPID keypair lets this server deliver Web Push
+    # notifications directly to browsers, with no APNs/FCM or bouncer.
+    return settings.WEB_PUSH_ENABLED
+
+
+def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, Any]) -> None:
+    """Deliver a Web Push payload to all of a user's browser subscriptions.
+
+    ``payload`` is the JSON object the service worker receives (an ``add`` or
+    ``remove`` message). Subscriptions the push service reports as gone (404 /
+    410) are pruned.
+    """
+    if not has_web_push_credentials():
+        return
+
+    subscriptions = list(WebPushSubscription.objects.filter(user_profile=user_profile))
+    if not subscriptions:
+        return
+
+    from pywebpush import WebPushException, webpush
+
+    # vapid_private_key is stored as base64(PEM).
+    vapid_private_key = base64.b64decode(settings.VAPID_PRIVATE_KEY).decode("utf-8")
+    data = orjson.dumps(payload)
+
+    stale_subscription_ids: list[int] = []
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": subscription.endpoint,
+                    "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
+                },
+                data=data,
+                vapid_private_key=vapid_private_key,
+                vapid_claims={"sub": settings.VAPID_CONTACT_EMAIL},
+            )
+        except WebPushException as e:
+            status_code = getattr(e.response, "status_code", None)
+            if status_code in (404, 410):
+                stale_subscription_ids.append(subscription.id)
+            else:
+                logger.warning("Web push to subscription %d failed: %s", subscription.id, e)
+
+    if stale_subscription_ids:
+        WebPushSubscription.objects.filter(id__in=stale_subscription_ids).delete()
 
 
 @cache
@@ -561,6 +612,9 @@ def uses_notification_bouncer() -> bool:
 
 
 def sends_notifications_directly() -> bool:
+    if has_web_push_credentials():
+        # Web Push is delivered straight from this server to the browser.
+        return True
     return has_apns_credentials() and has_fcm_credentials() and not uses_notification_bouncer()
 
 
@@ -779,6 +833,10 @@ def clear_push_device_tokens(user_profile_id: int) -> None:
 
 def push_notifications_configured() -> bool:
     """True just if this server has configured a way to send push notifications."""
+    if has_web_push_credentials():
+        # A VAPID keypair lets us deliver Web Push notifications to browsers
+        # without APNs/FCM or the bouncer.
+        return True
     if (
         uses_notification_bouncer()
         and settings.ZULIP_ORG_KEY is not None
@@ -1344,6 +1402,11 @@ def handle_remove_push_notification(user_profile_id: int, message_ids: list[int]
         get_payload_to_encrypt,
     )
 
+    send_web_push_notifications(
+        user_profile,
+        {"type": "remove", "message_ids": truncated_message_ids},
+    )
+
     # We intentionally use the non-truncated message_ids here.  We are
     # assuming in this very rare case that the user has manually
     # dismissed these notifications on the device side, and the server
@@ -1884,6 +1947,38 @@ def handle_push_notification(user_profile_id: int, missed_message: dict[str, Any
         get_payload_legacy,
         get_payload_to_encrypt,
     )
+
+    if has_web_push_credentials():
+        message_payload = get_message_payload(
+            user_profile,
+            message,
+            mentioned_user_group_id,
+            mentioned_user_group_name,
+            can_access_sender,
+        )
+        gcm_payload, _ = get_message_payload_gcm(
+            message_payload, user_profile, message, can_access_sender
+        )
+        sender_full_name = gcm_payload["sender_full_name"]
+        content = gcm_payload["content"]
+        if message.is_channel_message:
+            title = f"#{message_payload['stream']} > {message_payload['topic']}"
+            body = f"{sender_full_name}: {content}"
+        else:
+            title = sender_full_name
+            body = content
+        send_web_push_notifications(
+            user_profile,
+            {
+                "type": "add",
+                "title": title,
+                "body": body,
+                # TODO: deep-link to the specific conversation instead of the app root.
+                "url": user_profile.realm.url,
+                "tag": str(message.id),
+                "message_id": message.id,
+            },
+        )
 
 
 def send_test_push_notification_directly_to_devices(

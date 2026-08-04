@@ -45,6 +45,7 @@ from zerver.models.presence import UserPresence as UserPresence
 from zerver.models.presence import UserStatus as UserStatus
 from zerver.models.push_notifications import AbstractPushDeviceToken as AbstractPushDeviceToken
 from zerver.models.push_notifications import PushDeviceToken as PushDeviceToken
+from zerver.models.push_notifications import WebPushSubscription as WebPushSubscription
 from zerver.models.realm_audit_logs import AbstractRealmAuditLog as AbstractRealmAuditLog
 from zerver.models.realm_audit_logs import RealmAuditLog as RealmAuditLog
 from zerver.models.realm_emoji import RealmEmoji as RealmEmoji

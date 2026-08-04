@@ -84,6 +84,9 @@ prod = [
   # Needed for iOS push notifications
   "aioapns",
 
+  # Needed for browser Web Push notifications
+  "pywebpush",
+
   # To parse po files
   "polib",
 

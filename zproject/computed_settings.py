@@ -535,6 +535,16 @@ CONSTRUCTOR_GROUPS_SECRET_KEY = get_secret("constructor_groups_secret_key")
 NEXTCLOUD_TALK_USERNAME = get_secret("nextcloud_talk_username")
 NEXTCLOUD_TALK_PASSWORD = get_secret("nextcloud_talk_password")
 
+# Web Push (browser) notifications. A self-generated VAPID keypair lets this
+# server deliver push directly to browsers without APNs/FCM or the bouncer.
+# vapid_private_key is stored as base64(PEM); vapid_public_key is the
+# base64url-encoded uncompressed P-256 point used as the browser
+# applicationServerKey.
+VAPID_PUBLIC_KEY = get_secret("vapid_public_key")
+VAPID_PRIVATE_KEY = get_secret("vapid_private_key")
+VAPID_CONTACT_EMAIL = get_secret("vapid_contact_email", "mailto:zulip-admin@localhost")
+WEB_PUSH_ENABLED = VAPID_PUBLIC_KEY is not None and VAPID_PRIVATE_KEY is not None
+
 # These are the bots that Zulip sends automated messages as.
 INTERNAL_BOTS = [
     {
