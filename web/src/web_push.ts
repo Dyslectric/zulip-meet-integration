@@ -66,13 +66,10 @@ function save_subscription(subscription: PushSubscription): Promise<void> {
     });
 }
 
-export async function initialize(): Promise<void> {
+// Registers the service worker and makes sure this browser is subscribed.
+// The caller must already have notification permission granted.
+export async function subscribe(): Promise<void> {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-        return;
-    }
-    // We only subscribe once the user has granted notification permission
-    // through the existing desktop-notification flow.
-    if (Notification.permission !== "granted") {
         return;
     }
 
@@ -97,4 +94,14 @@ export async function initialize(): Promise<void> {
     });
 
     await save_subscription(subscription);
+}
+
+// Runs on load: if permission is already granted, make sure we're subscribed.
+// The actual permission request happens from a user gesture in
+// settings_notifications.ts.
+export async function initialize(): Promise<void> {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+        return;
+    }
+    await subscribe();
 }

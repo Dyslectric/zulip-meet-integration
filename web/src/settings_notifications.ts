@@ -37,6 +37,7 @@ import {
     user_settings_schema,
 } from "./user_settings.ts";
 import * as util from "./util.ts";
+import * as web_push from "./web_push.ts";
 
 export let user_settings_panel: SettingsPanel | undefined;
 let customize_stream_notifications_widget: dropdown_widget.DropdownWidget;
@@ -128,7 +129,12 @@ function update_desktop_notification_banner(): void {
     // `Notification.permission` in a mobile context, in which we'll also
     // hide the ability to send a test notification before exiting with an
     // early return.
-    if (util.is_mobile()) {
+    // Web Push works on mobile browsers that support the Push API (e.g.
+    // Firefox/Chrome on Android), so only suppress the prompt on mobile
+    // browsers that genuinely can't notify.
+    const web_push_supported =
+        "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    if (util.is_mobile() && !web_push_supported) {
         $(".send_test_notification").hide();
         return;
     }
@@ -405,6 +411,7 @@ export function set_up(settings_panel: SettingsPanel): void {
             const permission = await Notification.requestPermission();
             if (permission === "granted") {
                 update_desktop_notification_banner();
+                void web_push.subscribe();
             } else if (permission === "denied") {
                 window.open(
                     "/help/desktop-notifications#check-platform-settings",
