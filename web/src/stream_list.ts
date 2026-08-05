@@ -855,6 +855,7 @@ function build_stream_sidebar_li(sub: StreamSubscription, for_modal = false): JQ
             sub.stream_id,
         ),
         is_empty_topic_only_channel: stream_data.is_empty_topic_only_channel(sub.stream_id),
+        voice_video_enabled: sub.voice_video_enabled,
         for_modal,
     };
     const $list_item = $(render_stream_sidebar_row(args));

@@ -478,16 +478,33 @@ export async function initialize_everything(state_data) {
        user_settings before setting the theme. Because information
        density is so fundamental, we initialize that first, however. */
     initialize_user_settings(state_data.user_settings);
-    $("body").on("click", ".jitsi-call-button", (e) => {
+    $("body").on("click", ".jitsi-call-button, .jitsi-sidebar-call-button", function (e) {
         e.preventDefault();
         e.stopPropagation();
-        const stream_id = narrow_state.stream_id();
-        const pm_ids = narrow_state.pm_ids();
+        // A sidebar row's button names its own conversation with data
+        // attributes; the navbar button acts on the current narrow. The button
+        // sits inside the row's link, so the preventDefault above is what stops
+        // a click from also narrowing.
+        const row_stream_id = this.dataset.streamId;
+        const row_user_ids_string = this.dataset.userIdsString;
+        let stream_id;
+        let pm_ids;
+        if (row_stream_id !== undefined) {
+            stream_id = Number.parseInt(row_stream_id, 10);
+            if (Number.isNaN(stream_id)) {
+                return;
+            }
+        } else if (row_user_ids_string) {
+            pm_ids = row_user_ids_string.split(",").map(Number);
+        } else {
+            stream_id = narrow_state.stream_id();
+            pm_ids = narrow_state.pm_ids();
+        }
         let data;
         let label;
         if (stream_id !== undefined) {
             data = {stream_id};
-            const stream_name = narrow_state.stream_name();
+            const stream_name = sub_store.get(stream_id)?.name;
             label = stream_name === undefined ? undefined : "#" + stream_name;
         } else if (pm_ids !== undefined && pm_ids.length > 0) {
             data = {user_ids: JSON.stringify(pm_ids)};

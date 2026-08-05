@@ -49,6 +49,7 @@ exports.make_stream = (opts = {}) => {
         /* Most tests want to work with a channel the current user is subscribed to. */
         subscribed: true,
         topics_policy: "inherit",
+        voice_video_enabled: true,
         wildcard_mentions_notify: false,
         folder_id: null,
     };

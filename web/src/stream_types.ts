@@ -64,6 +64,7 @@ export const stream_schema = z.object({
     stream_id: z.number(),
     stream_post_policy: z.enum(StreamPostPolicy),
     topics_policy: stream_topics_policy_schema,
+    voice_video_enabled: z.boolean(),
 });
 
 export const stream_specific_notification_settings_schema = z.object({

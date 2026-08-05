@@ -2,6 +2,43 @@
    adds .jitsi-call-active (and .jitsi-call-private) to a channel row that has a
    live call and injects the speaker icon, lock badge, and occupant avatars. */
 
+/* Call button on a sidebar row: hidden until the row is hovered (or focused,
+   for keyboard users), matching how the row's other controls behave. Channel
+   rows only render it when the channel allows calls; DM rows always do. */
+.jitsi-sidebar-call-button {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-sidebar-action);
+    margin: 2px 0;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.bottom_left_row:hover .jitsi-sidebar-call-button,
+.bottom_left_row:focus-within .jitsi-sidebar-call-button {
+    display: flex;
+}
+
+.jitsi-sidebar-call-button:hover {
+    color: var(--color-sidebar-action-hover, inherit);
+    background-color: var(--color-background-tab-hover, hsl(0deg 0% 0% / 8%));
+}
+
+/* Speaker beside a DM/group DM label while a call is live there. Filled in by
+   jitsi_sidebar.ts; collapsed when empty so it takes no space. */
+.jitsi-dm-speaker-slot:empty {
+    display: none;
+}
+
+.jitsi-dm-speaker-slot {
+    display: inline-flex;
+    align-items: center;
+    /* Deliberately gray rather than the row's text color: it reports state, it
+       is not an action. */
+    color: var(--color-text-sidebar-action-heading);
+}
+
 /* Replace the channel's normal privacy glyph with the injected speaker while a
    call is live. Our own glyphs are SVG, so hiding the icon-font glyph is safe. */
 .narrow-filter.jitsi-call-active .stream-privacy .zulip-icon {
