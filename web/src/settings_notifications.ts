@@ -43,21 +43,25 @@ export let user_settings_panel: SettingsPanel | undefined;
 let customize_stream_notifications_widget: dropdown_widget.DropdownWidget;
 const stream_ids_with_custom_notifications = new Set<number>();
 
-const DESKTOP_NOTIFICATIONS_BANNER: banners.Banner = {
-    intent: "warning",
-    label: $t({
-        defaultMessage: "Zulip needs your permission to enable desktop notifications.",
-    }),
-    buttons: [
-        {
-            label: $t({defaultMessage: "Enable notifications"}),
-            custom_classes: "desktop-notifications-request",
-            variant: "solid",
-        },
-    ],
-    close_button: true,
-    custom_classes: "desktop-setting-notifications",
-};
+// A function rather than a constant so the wording can depend on the device;
+// see the matching banner in navbar_alerts.ts.
+function desktop_notifications_banner(): banners.Banner {
+    return {
+        intent: "warning",
+        label: util.is_mobile()
+            ? $t({defaultMessage: "Zulip needs your permission to send you notifications."})
+            : $t({defaultMessage: "Zulip needs your permission to enable desktop notifications."}),
+        buttons: [
+            {
+                label: $t({defaultMessage: "Enable notifications"}),
+                custom_classes: "desktop-notifications-request",
+                variant: "solid",
+            },
+        ],
+        close_button: true,
+        custom_classes: "desktop-setting-notifications",
+    };
+}
 
 const MOBILE_PUSH_NOTIFICATION_BANNER: banners.Banner = {
     intent: "warning",
@@ -139,7 +143,7 @@ function update_desktop_notification_banner(): void {
         $(".send_test_notification").show();
     } else {
         if ($banner_container.find(".desktop-setting-notifications").length === 0) {
-            banners.append(DESKTOP_NOTIFICATIONS_BANNER, $banner_container);
+            banners.append(desktop_notifications_banner(), $banner_container);
         }
         $(".send_test_notification").hide();
     }

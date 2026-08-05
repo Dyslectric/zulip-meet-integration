@@ -1,3 +1,5 @@
+import * as z from "zod/mini";
+
 import * as channel from "./channel.ts";
 
 // Web Push subscription flow. Runs on load: if the user has already granted
@@ -5,39 +7,27 @@ import * as channel from "./channel.ts";
 // service worker and make sure the browser is subscribed. The service worker
 // itself (served from /service-worker.js) handles incoming push and clicks.
 
-type WebPushConfig = {
-    web_push_enabled: boolean;
-    vapid_public_key: string;
-};
+const web_push_config_schema = z.object({
+    web_push_enabled: z.boolean(),
+    vapid_public_key: z.string(),
+});
 
-function is_web_push_config(data: unknown): data is WebPushConfig {
-    return (
-        typeof data === "object" &&
-        data !== null &&
-        "web_push_enabled" in data &&
-        typeof (data as {web_push_enabled: unknown}).web_push_enabled === "boolean" &&
-        "vapid_public_key" in data &&
-        typeof (data as {vapid_public_key: unknown}).vapid_public_key === "string"
-    );
-}
+type WebPushConfig = z.infer<typeof web_push_config_schema>;
 
 function url_base64_to_uint8_array(base64_string: string): Uint8Array<ArrayBuffer> {
     const padding = "=".repeat((4 - (base64_string.length % 4)) % 4);
     const base64 = (base64_string + padding).replaceAll("-", "+").replaceAll("_", "/");
-    const raw = window.atob(base64);
-    const output = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i += 1) {
-        output[i] = raw.charCodeAt(i);
-    }
-    return output;
+    // atob yields one character per byte, so each code point is the byte value.
+    return Uint8Array.from(window.atob(base64), (character) => character.codePointAt(0) ?? 0);
 }
 
-function get_config(): Promise<WebPushConfig | undefined> {
+async function get_config(): Promise<WebPushConfig | undefined> {
     return new Promise((resolve) => {
         void channel.get({
             url: "/json/users/me/web_push_subscription",
-            success(data: unknown) {
-                resolve(is_web_push_config(data) ? data : undefined);
+            success(data) {
+                const parsed = web_push_config_schema.safeParse(data);
+                resolve(parsed.success ? parsed.data : undefined);
             },
             error() {
                 resolve(undefined);
@@ -46,7 +36,7 @@ function get_config(): Promise<WebPushConfig | undefined> {
     });
 }
 
-function save_subscription(subscription: PushSubscription): Promise<void> {
+async function save_subscription(subscription: PushSubscription): Promise<void> {
     const json = subscription.toJSON();
     return new Promise((resolve) => {
         void channel.post({
@@ -105,7 +95,7 @@ export async function subscribe(): Promise<void> {
 
 // Runs on load: if permission is already granted, make sure we're subscribed.
 // The actual permission request happens from a user gesture in
-// settings_notifications.ts.
+// settings_notifications.ts and navbar_alerts.ts.
 export async function initialize(): Promise<void> {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") {
         return;

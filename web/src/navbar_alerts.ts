@@ -183,33 +183,46 @@ export function should_offer_to_update_timezone(): boolean {
     );
 }
 
-const DESKTOP_NOTIFICATIONS_BANNER: AlertBanner = {
-    process: "desktop-notifications",
-    intent: "brand",
-    label: $t({
-        defaultMessage:
-            "Zulip needs your permission to enable desktop notifications for important messages.",
-    }),
-    buttons: [
-        {
-            variant: "solid",
-            label: $t({defaultMessage: "Enable notifications"}),
-            custom_classes: "request-desktop-notifications",
-        },
-        {
-            variant: "subtle",
-            label: $t({defaultMessage: "Customize notifications"}),
-            custom_classes: "customize-desktop-notifications",
-        },
-        {
-            variant: "text",
-            label: $t({defaultMessage: "Never ask on this computer"}),
-            custom_classes: "reject-desktop-notifications",
-        },
-    ],
-    close_button: true,
-    custom_classes: "navbar-alert-banner",
-};
+// A function rather than a constant so the wording can depend on the device;
+// "desktop notifications" on a phone reads as though it were for another
+// machine entirely.
+function desktop_notifications_banner(): AlertBanner {
+    const mobile = util.is_mobile();
+    return {
+        process: "desktop-notifications",
+        intent: "brand",
+        label: mobile
+            ? $t({
+                  defaultMessage:
+                      "Zulip needs your permission to send you notifications for important messages.",
+              })
+            : $t({
+                  defaultMessage:
+                      "Zulip needs your permission to enable desktop notifications for important messages.",
+              }),
+        buttons: [
+            {
+                variant: "solid",
+                label: $t({defaultMessage: "Enable notifications"}),
+                custom_classes: "request-desktop-notifications",
+            },
+            {
+                variant: "subtle",
+                label: $t({defaultMessage: "Customize notifications"}),
+                custom_classes: "customize-desktop-notifications",
+            },
+            {
+                variant: "text",
+                label: mobile
+                    ? $t({defaultMessage: "Never ask on this device"})
+                    : $t({defaultMessage: "Never ask on this computer"}),
+                custom_classes: "reject-desktop-notifications",
+            },
+        ],
+        close_button: true,
+        custom_classes: "navbar-alert-banner",
+    };
+}
 
 const CONFIGURE_OUTGOING_MAIL_BANNER: AlertBanner = {
     process: "configure-outgoing-mail",
@@ -543,7 +556,7 @@ export function initialize(): void {
         // display a warning to tell them to set up an email server.
         open_navbar_banner_and_resize(CONFIGURE_OUTGOING_MAIL_BANNER);
     } else if (should_show_desktop_notifications_banner(ls)) {
-        open_navbar_banner_and_resize(DESKTOP_NOTIFICATIONS_BANNER);
+        open_navbar_banner_and_resize(desktop_notifications_banner());
     } else if (should_show_bankruptcy_banner()) {
         open_navbar_banner_and_resize(bankruptcy_banner());
     } else if (
@@ -785,7 +798,7 @@ export function initialize(): void {
             onMount(instance) {
                 const $popper = $(instance.popper);
                 $popper.on("click", ".desktop-notifications", () => {
-                    open_navbar_banner_and_resize(DESKTOP_NOTIFICATIONS_BANNER);
+                    open_navbar_banner_and_resize(desktop_notifications_banner());
                     popover_menus.hide_current_popover_if_visible(instance);
                 });
                 $popper.on("click", ".configure-outgoing-mail", () => {
