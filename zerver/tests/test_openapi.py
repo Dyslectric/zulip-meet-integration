@@ -256,6 +256,12 @@ class OpenAPIArgumentsTest(ZulipTestCase):
         "/remotes/server/analytics",
         "/remotes/server/analytics/status",
         "/remotes/server/billing",
+        #### Endpoints the web app calls for itself, not part of the public API.
+        # Call occupancy for the left sidebar's call-aware rows.
+        "/calls/jitsi/occupancy",
+        "/calls/jitsi/occupancy_all",
+        # Browser Web Push subscription registration.
+        "/users/me/web_push_subscription",
     }
 
     # Endpoints in the API documentation that don't use rest_dispatch

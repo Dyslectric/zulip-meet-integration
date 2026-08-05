@@ -1,5 +1,6 @@
 import time
 from datetime import datetime, timezone
+from typing import Any
 from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
@@ -7,6 +8,7 @@ import jwt
 import orjson
 import time_machine
 from django.core.signing import Signer
+from typing_extensions import override
 
 from zerver.actions.user_groups import check_add_user_group
 from zerver.lib.jitsi_token import (
@@ -20,7 +22,7 @@ from zerver.models import UserProfile
 from zerver.models.streams import get_stream
 from zerver.views.video_calls import EPOCH_SIGNER_SALT
 
-JWT_SETTINGS = dict(
+JWT_SETTINGS: dict[str, Any] = dict(
     JITSI_SERVER_URL="https://jitsi.example.com",
     JITSI_JWT_APP_ID="zulip",
     JITSI_JWT_APP_SECRET="test-app-secret-of-at-least-32-bytes!!",
@@ -86,12 +88,13 @@ class JitsiTokenLibraryTest(ZulipTestCase):
 
 
 class JitsiCreateCallTest(ZulipTestCase):
+    @override
     def setUp(self) -> None:
         super().setUp()
         self.user = self.example_user("hamlet")
         self.login_user(self.user)
 
-    def decode(self, url: str) -> dict[str, object]:
+    def decode(self, url: str) -> dict[str, Any]:
         token = parse_qs(urlsplit(url).query)["jwt"][0]
         return jwt.decode(
             token,
