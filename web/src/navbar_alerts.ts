@@ -29,6 +29,7 @@ import * as unread_ops from "./unread_ops.ts";
 import {user_settings} from "./user_settings.ts";
 import * as user_topics from "./user_topics.ts";
 import * as util from "./util.ts";
+import * as web_push from "./web_push.ts";
 
 function open_navbar_banner_and_resize(banner: AlertBanner): void {
     banners.open(banner, $("#navbar_alerts_wrapper"));
@@ -55,10 +56,10 @@ export function should_show_desktop_notifications_banner(ls: LocalStorage): bool
         // Spectators cannot receive desktop notifications, so never
         // request permissions to send them.
         !page_params.is_spectator &&
-        // notifications *basically* don't work on any mobile platforms, so don't
-        // event show the banners. This prevents trying to access things that
-        // don't exist like `Notification.permission`.
-        !util.is_mobile() &&
+        // Mobile browsers that implement the Push API deliver notifications
+        // via Web Push, so only skip the banner on mobile browsers that
+        // genuinely cannot receive them.
+        (!util.is_mobile() || web_push.is_supported()) &&
         // if permission has not been granted yet.
         !desktop_notifications.granted_desktop_notifications_permission() &&
         // if permission is allowed to be requested (e.g. not in "denied" state).
@@ -579,6 +580,11 @@ export function initialize(): void {
                 const $banner = $(this).closest(".banner");
                 const permission =
                     await desktop_notifications.request_desktop_notifications_permission();
+                if (permission === "granted") {
+                    // Subscribe from this user gesture, so browsers that only
+                    // permit subscribing after a grant do so right away.
+                    void web_push.subscribe();
+                }
                 if (permission === "granted" || permission === "denied") {
                     close_navbar_banner_and_resize($banner);
                 }

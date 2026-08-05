@@ -12,6 +12,7 @@ const {page_params} = require("./lib/zpage_params.cjs");
 const desktop_notifications = mock_esm("../src/desktop_notifications");
 const unread = mock_esm("../src/unread");
 const util = mock_esm("../src/util");
+const web_push = mock_esm("../src/web_push", {is_supported: () => false});
 
 const {localstorage} = zrequire("localstorage");
 const navbar_alerts = zrequire("navbar_alerts");
@@ -50,9 +51,12 @@ test("should_show_desktop_notifications_banner", ({override}) => {
     assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), false);
     ls.set("dontAskForNotifications", undefined);
 
-    // Don't ask for permission if device is mobile.
+    // On mobile, only ask if the browser can actually receive Web Push.
     override(util, "is_mobile", () => true);
+    override(web_push, "is_supported", () => false);
     assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), false);
+    override(web_push, "is_supported", () => true);
+    assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), true);
     override(util, "is_mobile", () => false);
 
     // Don't ask for permission if notification is denied by user.

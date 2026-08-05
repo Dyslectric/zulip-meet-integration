@@ -66,10 +66,17 @@ function save_subscription(subscription: PushSubscription): Promise<void> {
     });
 }
 
+// Whether this browser can receive Web Push at all. Mobile browsers that
+// implement the Push API can, so this is what should gate offering the
+// notification permission prompt, rather than a mobile check.
+export function is_supported(): boolean {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
 // Registers the service worker and makes sure this browser is subscribed.
 // The caller must already have notification permission granted.
 export async function subscribe(): Promise<void> {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!is_supported()) {
         return;
     }
 

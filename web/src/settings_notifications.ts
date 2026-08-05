@@ -123,18 +123,12 @@ function rerender_ui(): void {
 }
 
 function update_desktop_notification_banner(): void {
-    // As is also noted in `navbar_alerts.ts`, notifications *basically*
-    // don't work on any mobile platforms, so don't event show the banners.
-    // This prevents trying to access things that don't exist, like
-    // `Notification.permission` in a mobile context, in which we'll also
-    // hide the ability to send a test notification before exiting with an
-    // early return.
     // Web Push works on mobile browsers that support the Push API (e.g.
-    // Firefox/Chrome on Android), so only suppress the prompt on mobile
-    // browsers that genuinely can't notify.
-    const web_push_supported =
-        "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-    if (util.is_mobile() && !web_push_supported) {
+    // Firefox/Chrome on Android), so only suppress the prompt -- and the
+    // ability to send a test notification -- on mobile browsers that
+    // genuinely can't notify. Accessing `Notification.permission` below is
+    // safe once we know the API exists.
+    if (util.is_mobile() && !web_push.is_supported()) {
         $(".send_test_notification").hide();
         return;
     }
