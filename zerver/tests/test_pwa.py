@@ -123,6 +123,8 @@ class WebPushSenderTest(ZulipTestCase):
             kwargs["subscription_info"]["endpoint"], "https://push.example.com/sub/1"
         )
         self.assertEqual(orjson.loads(kwargs["data"]), payload)
+        # A non-zero TTL so the push service holds messages for offline phones.
+        self.assertGreater(kwargs["ttl"], 0)
 
     def test_disabled_is_noop(self) -> None:
         hamlet = self.example_user("hamlet")

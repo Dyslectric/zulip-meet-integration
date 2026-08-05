@@ -184,6 +184,13 @@ def has_web_push_credentials() -> bool:
     return settings.WEB_PUSH_ENABLED
 
 
+# How long (seconds) the push service should hold a message for a device that is
+# offline/asleep before giving up. Without this, pywebpush defaults to TTL=0,
+# meaning "deliver now or discard" -- fine for an always-connected desktop
+# browser, but it drops every message for a phone whose browser is backgrounded.
+WEB_PUSH_TTL_SECONDS = 24 * 60 * 60
+
+
 def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, Any]) -> None:
     """Deliver a Web Push payload to all of a user's browser subscriptions.
 
@@ -213,6 +220,7 @@ def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, An
                     "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
                 },
                 data=data,
+                ttl=WEB_PUSH_TTL_SECONDS,
                 vapid_private_key=vapid_private_key,
                 vapid_claims={"sub": settings.VAPID_CONTACT_EMAIL},
             )
