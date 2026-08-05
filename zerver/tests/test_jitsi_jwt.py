@@ -1,4 +1,5 @@
 import time
+from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 import jwt
@@ -333,3 +334,57 @@ class JitsiCreateCallTest(ZulipTestCase):
                 options={"verify_exp": True},
                 leeway=-(int(time.time()) + 1),
             )
+
+
+class JitsiOccupancyAllTest(ZulipTestCase):
+    """The bulk sidebar feed must not leak a call from a conversation the
+    requesting user is not part of."""
+
+    def _dm_room(self, user_ids: list[int], realm_id: int) -> dict[str, object]:
+        return {
+            "user_ids": sorted(user_ids),
+            "realm_id": realm_id,
+            "active": True,
+            "count": 1,
+            "occupants": [],
+            "drifted": False,
+        }
+
+    def _fetch(self, rooms: list[dict[str, object]]) -> dict[str, object]:
+        with (
+            self.settings(
+                JITSI_CONFERENCING_URL="http://conferencing.example",
+                JITSI_CONFERENCING_SECRET="s3cret",
+            ),
+            mock.patch("zerver.views.video_calls.requests.get") as fake_get,
+        ):
+            fake_get.return_value = mock.Mock(json=lambda: {"rooms": rooms})
+            result = self.client_get("/json/calls/jitsi/occupancy_all")
+        return self.assert_json_success(result)
+
+    def test_only_direct_message_calls_the_user_is_in_are_returned(self) -> None:
+        hamlet = self.example_user("hamlet")
+        othello = self.example_user("othello")
+        cordelia = self.example_user("cordelia")
+        self.login_user(hamlet)
+
+        mine = self._dm_room([hamlet.id, othello.id], hamlet.realm_id)
+        theirs = self._dm_room([othello.id, cordelia.id], hamlet.realm_id)
+        response = self._fetch([mine, theirs])
+
+        rooms = response["rooms"]
+        assert isinstance(rooms, list)
+        self.assertEqual(
+            [room["user_ids"] for room in rooms],
+            [sorted([hamlet.id, othello.id])],
+        )
+
+    def test_a_direct_message_call_in_another_realm_is_dropped(self) -> None:
+        hamlet = self.example_user("hamlet")
+        othello = self.example_user("othello")
+        self.login_user(hamlet)
+
+        elsewhere = self._dm_room([hamlet.id, othello.id], hamlet.realm_id + 100)
+        response = self._fetch([elsewhere])
+
+        self.assertEqual(response["rooms"], [])

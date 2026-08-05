@@ -1038,12 +1038,22 @@ def get_jitsi_occupancy_all(
     visible: list[dict[str, Any]] = []
     for room in rooms:
         stream_id = room.get("stream_id")
-        if not isinstance(stream_id, int):
+        if isinstance(stream_id, int):
+            try:
+                access_stream_by_id(user, stream_id)
+            except JsonableError:
+                continue  # user can't reach this channel: drop its call from the feed
+            visible.append(room)
             continue
-        try:
-            access_stream_by_id(user, stream_id)
-        except JsonableError:
-            continue  # user can't reach this channel: drop its call from the feed
+
+        # A DM/group call. Being one of its participants is the entitlement, so
+        # a user never learns about a call in a conversation they are not in.
+        user_ids = room.get("user_ids")
+        if not isinstance(user_ids, list) or user.id not in user_ids:
+            continue
+        realm_id = room.get("realm_id")
+        if realm_id is not None and realm_id != user.realm_id:
+            continue
         visible.append(room)
     return json_success(request, {"rooms": visible})
 

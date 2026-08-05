@@ -15,12 +15,16 @@ import {$} from "jquery";
 import * as z from "zod/mini";
 
 import * as channel from "./channel.ts";
+import * as people from "./people.ts";
 import * as sub_store from "./sub_store.ts";
 
+// A room in the bulk feed is a channel call (stream_id) or a DM/group call
+// (user_ids); exactly one of the two identifies it.
 const occupancy_all_schema = z.object({
     rooms: z.array(
         z.object({
-            stream_id: z.number(),
+            stream_id: z.optional(z.number()),
+            user_ids: z.optional(z.array(z.number())),
             active: z.boolean(),
             count: z.number(),
             occupants: z.array(
@@ -63,6 +67,9 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 let poll_interval_id: number | undefined;
 // Latest occupancy for each channel with a live call.
 const occupancy_by_stream = new Map<number, SidebarOccupancy>();
+// Participant-set keys (see dm_key) of the DM/group conversations with a live
+// call. Only presence matters for a DM row: it shows a speaker, not a roster.
+const dm_calls = new Set<string>();
 // The display names currently speaking in the one call we are in, keyed by the
 // channel it belongs to. Names (not user ids) because that is what the Jitsi web
 // relay reports and what the occupant avatars carry. A set, not one name — the
@@ -90,15 +97,28 @@ function poll(): void {
 
 function ingest(raw: unknown): void {
     occupancy_by_stream.clear();
+    dm_calls.clear();
     const parsed = occupancy_all_schema.safeParse(raw);
     if (!parsed.success) {
         return;
     }
     for (const room of parsed.data.rooms) {
-        if (room.active) {
-            occupancy_by_stream.set(room.stream_id, room);
+        if (!room.active) {
+            continue;
+        }
+        if (room.stream_id !== undefined) {
+            occupancy_by_stream.set(room.stream_id, {...room, stream_id: room.stream_id});
+        } else if (room.user_ids !== undefined) {
+            dm_calls.add(dm_key(room.user_ids));
         }
     }
+}
+
+// DM conversations are identified by their full participant set, so a call's
+// key is every participant sorted. The sidebar row lists everyone but you,
+// hence add_self below.
+function dm_key(user_ids: number[]): string {
+    return [...new Set(user_ids)].sort((a, b) => a - b).join(",");
 }
 
 // A pushed jitsi_occupancy client event: an instant update for one channel, so the
@@ -129,6 +149,31 @@ function apply(): void {
             clear_row($li);
         } else {
             augment_row($li, stream_id, occupancy);
+        }
+    }
+    apply_dm_rows();
+}
+
+// A DM/group row gets a speaker beside its label while a call is live there.
+// Unlike channels there are no avatars: the row is already a list of people.
+function apply_dm_rows(): void {
+    const me = people.my_current_user_id();
+    for (const li of $(".dm-list-item[data-user-ids-string]")) {
+        const slot = li.querySelector(".jitsi-dm-speaker-slot");
+        if (slot === null) {
+            continue;
+        }
+        const row_ids = (li.getAttribute("data-user-ids-string") ?? "")
+            .split(",")
+            .map(Number)
+            .filter((id) => !Number.isNaN(id));
+        // The row omits you; a call's participant set includes you.
+        const active = dm_calls.has(dm_key([...row_ids, me]));
+        const has_icon = slot.querySelector(".jitsi-call-speaker-icon") !== null;
+        if (active && !has_icon) {
+            slot.append(make_speaker_icon());
+        } else if (!active && has_icon) {
+            slot.replaceChildren();
         }
     }
 }
