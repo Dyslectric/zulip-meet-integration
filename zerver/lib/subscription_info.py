@@ -175,6 +175,7 @@ def get_web_public_subs(
             stream_weekly_traffic=stream_weekly_traffic,
             subscriber_count=stream.subscriber_count,
             topics_policy=StreamTopicsPolicyEnum(topics_policy).name,
+            voice_video_enabled=stream.voice_video_enabled,
             wildcard_mentions_notify=wildcard_mentions_notify,
         )
         subscribed.append(sub)
@@ -278,6 +279,7 @@ def build_stream_api_dict(
         stream_weekly_traffic=stream_weekly_traffic,
         subscriber_count=raw_stream_dict["subscriber_count"],
         topics_policy=raw_stream_dict["topics_policy"],
+        voice_video_enabled=raw_stream_dict["voice_video_enabled"],
     )
 
 
@@ -318,6 +320,7 @@ def build_stream_dict_for_sub(
     stream_weekly_traffic = stream_dict["stream_weekly_traffic"]
     subscriber_count = stream_dict["subscriber_count"]
     topics_policy = stream_dict["topics_policy"]
+    voice_video_enabled = stream_dict["voice_video_enabled"]
 
     # Handle Subscription.API_FIELDS.
     color = sub_dict["color"]
@@ -374,6 +377,7 @@ def build_stream_dict_for_sub(
         stream_weekly_traffic=stream_weekly_traffic,
         subscriber_count=subscriber_count,
         topics_policy=topics_policy,
+        voice_video_enabled=voice_video_enabled,
         wildcard_mentions_notify=wildcard_mentions_notify,
     )
 
@@ -401,6 +405,7 @@ def build_stream_dict_for_never_sub(
     stream_post_policy = raw_stream_dict["stream_post_policy"]
     subscriber_count = raw_stream_dict["subscriber_count"]
     topics_policy = raw_stream_dict["topics_policy"]
+    voice_video_enabled = raw_stream_dict["voice_video_enabled"]
 
     if recent_traffic is not None:
         stream_weekly_traffic = get_average_weekly_stream_traffic(
@@ -479,6 +484,7 @@ def build_stream_dict_for_never_sub(
         stream_weekly_traffic=stream_weekly_traffic,
         subscriber_count=subscriber_count,
         topics_policy=topics_policy,
+        voice_video_enabled=voice_video_enabled,
     )
 
 

@@ -19197,6 +19197,7 @@ paths:
                                 default_push_notifications: {}
                                 history_public_to_subscribers: {}
                                 topics_policy: {}
+                                voice_video_enabled: {}
                                 first_message_id:
                                   nullable: true
                                 folder_id:
@@ -24266,6 +24267,7 @@ paths:
                                 default_push_notifications: {}
                                 history_public_to_subscribers: {}
                                 topics_policy: {}
+                                voice_video_enabled: {}
                                 first_message_id:
                                   nullable: true
                                 folder_id:
@@ -27293,12 +27295,14 @@ paths:
                     A signed token from a previous response, identifying which
                     room the conversation is currently using. Omit it to use the
                     conversation's first room.
+                  example: "3:1kFnQx:qFB0y7oQ0zJ8Zx1n1kUvJ5x1t0o"
                 rotate:
                   type: boolean
                   default: false
                   description: |
                     Whether to move the conversation to a fresh room, abandoning
                     the previous one. Useful when a link has leaked.
+                  example: false
             encoding:
               user_ids:
                 contentType: application/json
@@ -27576,6 +27580,7 @@ components:
             default_push_notifications: {}
             history_public_to_subscribers: {}
             topics_policy: {}
+            voice_video_enabled: {}
             first_message_id:
               nullable: true
             folder_id:
@@ -27752,6 +27757,12 @@ components:
             assumption, as we may change that behavior in the future.
         topics_policy:
           $ref: "#/components/schemas/TopicsPolicy"
+        voice_video_enabled:
+          type: boolean
+          description: |
+            Whether voice and video calls can be started in this channel.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
         first_message_id:
           type: integer
           nullable: true
@@ -28918,6 +28929,12 @@ components:
           $ref: "#/components/schemas/FolderId"
         topics_policy:
           $ref: "#/components/schemas/TopicsPolicy"
+        voice_video_enabled:
+          type: boolean
+          description: |
+            Whether voice and video calls can be started in this channel.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
         is_recently_active:
           type: boolean
           description: |

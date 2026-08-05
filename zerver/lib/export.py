@@ -218,6 +218,7 @@ ALL_ZULIP_TABLES = {
     "zerver_userstatus",
     "zerver_usertopic",
     "zerver_muteduser",
+    "zerver_webpushsubscription",
 }
 
 # This set contains those database tables that we expect to not be
@@ -248,6 +249,9 @@ NON_EXPORTED_TABLES = {
     # reregister for push notifications anyway.
     "zerver_device",
     "zerver_pushdevicetoken",
+    # A browser Web Push subscription is bound to that browser's push service,
+    # so it is meaningless on another server; clients resubscribe.
+    "zerver_webpushsubscription",
     # We don't use these generated Django tables
     "zerver_userprofile_groups",
     "zerver_userprofile_user_permissions",
