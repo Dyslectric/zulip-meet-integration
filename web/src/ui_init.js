@@ -478,15 +478,11 @@ export async function initialize_everything(state_data) {
        user_settings before setting the theme. Because information
        density is so fundamental, we initialize that first, however. */
     initialize_user_settings(state_data.user_settings);
-    $("body").on("click", ".jitsi-call-button, .jitsi-sidebar-call-button", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        // A sidebar row's button names its own conversation with data
-        // attributes; the navbar button acts on the current narrow. The button
-        // sits inside the row's link, so the preventDefault above is what stops
-        // a click from also narrowing.
-        const row_stream_id = this.dataset.streamId;
-        const row_user_ids_string = this.dataset.userIdsString;
+    // A sidebar row's button names its own conversation with data attributes;
+    // the navbar button acts on the current narrow.
+    function start_jitsi_call_from(button) {
+        const row_stream_id = button.dataset.streamId;
+        const row_user_ids_string = button.dataset.userIdsString;
         let stream_id;
         let pm_ids;
         if (row_stream_id !== undefined) {
@@ -520,6 +516,23 @@ export async function initialize_everything(state_data) {
                 void start_embedded_call(response.url, {label, stream_id});
             },
         });
+    }
+
+    $("body").on("click", ".jitsi-call-button, .jitsi-sidebar-call-button", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        start_jitsi_call_from(this);
+    });
+
+    // A channel row's button lives inside the row's link, and #stream_filters
+    // delegates clicks on that link to narrowing to the channel. Bind here as
+    // well as on the body: jQuery walks from the click target outwards, so this
+    // deeper match runs first and can stop the narrow -- the same way the row's
+    // other controls avoid it. Without this, clicking the button just narrows.
+    $("#stream_filters").on("click", ".jitsi-sidebar-call-button", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        start_jitsi_call_from(this);
     });
 
     // Call-aware left sidebar: speaker/lock icons and participant avatars on

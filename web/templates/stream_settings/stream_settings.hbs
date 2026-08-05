@@ -63,15 +63,6 @@
                       }}
                 </div>
 
-                <div class="voice-video-enabled">
-                    {{> ../settings/settings_checkbox
-                      prefix="id_"
-                      setting_name="voice_video_enabled"
-                      is_checked=(lookup sub "voice_video_enabled")
-                      label=(t "Allow voice and video calls")
-                      }}
-                </div>
-
                 <div class="input-group stream-email-box">
                     <label for="copy_stream_email_button" class="settings-field-label">
                         {{t "Email address" }}
