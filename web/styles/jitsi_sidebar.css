@@ -3,15 +3,20 @@
    live call and injects the speaker icon, lock badge, and occupant avatars. */
 
 /* Replace the channel's normal privacy glyph with the injected speaker while a
-   call is live. The lock badge (private channels) is explicitly kept. */
-.narrow-filter.jitsi-call-active
-    .stream-privacy
-    .zulip-icon:not(.jitsi-call-lock-badge) {
+   call is live. Our own glyphs are SVG, so hiding the icon-font glyph is safe. */
+.narrow-filter.jitsi-call-active .stream-privacy .zulip-icon {
     display: none;
 }
 
-.narrow-filter.jitsi-call-active .stream-privacy {
+/* The positioning context for the lock badge: exactly the speaker's box, so the
+   badge tucks into the speaker's corner and not the corner of the wider cell. */
+.jitsi-call-glyph {
     position: relative;
+    display: inline-flex;
+    flex: none;
+    width: 1em;
+    height: 1em;
+    line-height: 1;
 }
 
 .jitsi-call-speaker-icon {
@@ -22,16 +27,22 @@
     vertical-align: middle;
 }
 
-/* Small lock over the speaker for a private channel with a live call. */
+/* Small lock in the bottom-right corner of the speaker for a private channel
+   with a live call. Sized in em (an SVG, not the icon font) so no sidebar rule
+   can inflate it back over the speaker. */
 .jitsi-call-lock-badge {
     position: absolute;
-    right: -3px;
-    bottom: -3px;
-    font-size: 0.6em;
-    line-height: 1;
-    padding: 1px;
+    right: -0.2em;
+    bottom: -0.15em;
+    width: 0.6em;
+    height: 0.6em;
+    /* A background disc keeps the lock legible where it overlaps the speaker. */
+    padding: 0.05em;
     border-radius: 50%;
-    background: var(--color-background, hsl(0deg 0% 100%));
+    background: var(
+        --color-background-left-sidebar,
+        var(--color-background, hsl(0deg 0% 100%))
+    );
 }
 
 /* Participants beneath the channel row, one per line (avatar + name). Indented to

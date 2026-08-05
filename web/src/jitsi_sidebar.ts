@@ -163,20 +163,48 @@ function augment_row($li: JQuery, stream_id: number, occupancy: SidebarOccupancy
     render_occupants($li, stream_id, occupancy);
 }
 
+// A small padlock, drawn rather than taken from the icon font: the font's
+// .zulip-icon-lock is sized by a more specific sidebar rule, which made the
+// badge as large as the speaker it is supposed to sit in the corner of.
+function make_lock_badge(): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.classList.add("jitsi-call-lock-badge");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    const shackle = document.createElementNS(SVG_NS, "path");
+    shackle.setAttribute("d", "M5 7.5V5.4a3 3 0 0 1 6 0v2.1");
+    shackle.setAttribute("fill", "none");
+    shackle.setAttribute("stroke", "currentColor");
+    shackle.setAttribute("stroke-width", "1.8");
+    svg.append(shackle);
+    const body = document.createElementNS(SVG_NS, "rect");
+    body.setAttribute("x", "3");
+    body.setAttribute("y", "7");
+    body.setAttribute("width", "10");
+    body.setAttribute("height", "7");
+    body.setAttribute("rx", "1.4");
+    body.setAttribute("fill", "currentColor");
+    svg.append(body);
+    return svg;
+}
+
 function ensure_icons($li: JQuery, is_private: boolean): void {
     const privacy = $li.find(".stream-privacy").first().get(0);
     if (privacy === undefined) {
         return;
     }
-    if (privacy.querySelector(".jitsi-call-speaker-icon") === null) {
-        privacy.append(make_speaker_icon());
+    // The speaker and its lock live in a wrapper sized to the glyph, so the
+    // badge anchors to the speaker's corner rather than to the whole cell.
+    let glyph = privacy.querySelector(".jitsi-call-glyph");
+    if (glyph === null) {
+        glyph = document.createElement("span");
+        glyph.className = "jitsi-call-glyph";
+        glyph.append(make_speaker_icon());
+        privacy.append(glyph);
     }
-    const lock = privacy.querySelector(".jitsi-call-lock-badge");
+    const lock = glyph.querySelector(".jitsi-call-lock-badge");
     if (is_private && lock === null) {
-        const badge = document.createElement("i");
-        badge.classList.add("zulip-icon", "zulip-icon-lock", "jitsi-call-lock-badge");
-        badge.setAttribute("aria-hidden", "true");
-        privacy.append(badge);
+        glyph.append(make_lock_badge());
     } else if (!is_private && lock !== null) {
         lock.remove();
     }
@@ -241,9 +269,7 @@ function clear_row($li: JQuery): void {
         return;
     }
     $li.removeClass("jitsi-call-active jitsi-call-private");
-    $li.find(
-        ".stream-privacy .jitsi-call-speaker-icon, .stream-privacy .jitsi-call-lock-badge",
-    ).remove();
+    $li.find(".stream-privacy .jitsi-call-glyph").remove();
     $li.children(".jitsi-sidebar-occupants").remove();
 }
 

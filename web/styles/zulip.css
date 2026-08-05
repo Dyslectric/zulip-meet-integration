@@ -1086,12 +1086,6 @@ div.focused-message-list.is-conversation-view .recipient_row {
     text-overflow: ellipsis;
 }
 
-/* A live call adds the occupancy widget (icon + count) alongside the
-   call button, so reserve a little more room for the header to clear. */
-.top-navbar-container:has(.jitsi-occupancy:not(.hide)) {
-    --jitsi-call-controls-reserve: 5em;
-}
-
 .top-navbar-container-allow-description-extension {
     overflow: visible;
 }
@@ -2593,52 +2587,4 @@ body:not(.spectator-view) {
    too instead of letting them stack on top of the search box. */
 .top-navbar-container:has(.navbar-search.expanded) #jitsi-call-controls {
     display: none;
-}
-
-.jitsi-occupancy {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    opacity: 0.75;
-    cursor: default;
-}
-
-.jitsi-occupancy.hide {
-    display: none;
-}
-
-.jitsi-occupancy-list {
-    display: none;
-    position: absolute;
-    top: 100%;
-    right: 0;
-    min-width: 160px;
-    padding: 6px 0;
-    background: var(--color-background, #fff);
-    color: var(--color-text-default, inherit);
-    border: 1px solid var(--color-border-default, #ccc);
-    border-radius: 6px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    z-index: 100;
-    text-align: left;
-}
-
-.jitsi-occupancy:hover .jitsi-occupancy-list {
-    display: block;
-}
-
-.jitsi-occupancy-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
-    white-space: nowrap;
-}
-.jitsi-occupancy-avatar {
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    object-fit: cover;
-    flex: none;
 }

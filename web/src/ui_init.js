@@ -42,7 +42,6 @@ import * as condense from "./condense.ts";
 import * as copy_messages from "./copy_messages.ts";
 import * as desktop_integration from "./desktop_integration.ts";
 import * as desktop_notifications from "./desktop_notifications.ts";
-import * as web_push from "./web_push.ts";
 import * as dialog_widget from "./dialog_widget.ts";
 import * as drafts from "./drafts.ts";
 import * as drafts_overlay_ui from "./drafts_overlay_ui.ts";
@@ -183,6 +182,7 @@ import * as user_topic_popover from "./user_topic_popover.ts";
 import * as user_topics from "./user_topics.ts";
 import * as util from "./util.ts";
 import * as watchdog from "./watchdog.ts";
+import * as web_push from "./web_push.ts";
 import * as widgets from "./widgets.ts";
 
 function update_page_loading_indicator_notice() {
@@ -504,68 +504,6 @@ export async function initialize_everything(state_data) {
             },
         });
     });
-
-    // Occupancy widget: real per-channel roster with avatars. Fetches immediately
-    // when the channel changes, then refreshes gently while you stay in it.
-    let jitsi_occupancy_stream_id;
-    let jitsi_occupancy_last_fetch = 0;
-
-    function jitsi_fetch_occupancy(stream_id) {
-        void channel.get({
-            url: "/json/calls/jitsi/occupancy",
-            data: {stream_id},
-            success(response) {
-                const $el = $(".jitsi-occupancy");
-                if ($el.length === 0 || narrow_state.stream_id() !== stream_id) {
-                    return; // narrow changed while the request was in flight
-                }
-                const count = response.count || 0;
-                if (!response.active || count === 0) {
-                    $el.addClass("hide");
-                    return;
-                }
-                $el.removeClass("hide");
-                $el.find(".jitsi-occupancy-count").text(count);
-                const $list = $el.find(".jitsi-occupancy-list").empty();
-                const people = response.drifted ? [] : response.occupants || [];
-                if (people.length === 0) {
-                    $("<div>")
-                        .addClass("jitsi-occupancy-row")
-                        .text(count + " in the call")
-                        .appendTo($list);
-                    return;
-                }
-                for (const person of people) {
-                    const $row = $("<div>").addClass("jitsi-occupancy-row");
-                    if (person.user_id) {
-                        $("<img>")
-                            .addClass("jitsi-occupancy-avatar")
-                            .attr("src", "/avatar/" + person.user_id + "/medium")
-                            .appendTo($row);
-                    }
-                    $("<span>").text(person.name).appendTo($row);
-                    $row.appendTo($list);
-                }
-            },
-        });
-    }
-
-    function jitsi_occupancy_tick() {
-        const stream_id = narrow_state.stream_id();
-        if (stream_id === undefined) {
-            $(".jitsi-occupancy").addClass("hide");
-            jitsi_occupancy_stream_id = undefined;
-            return;
-        }
-        const now = Date.now();
-        if (stream_id !== jitsi_occupancy_stream_id || now - jitsi_occupancy_last_fetch >= 5000) {
-            jitsi_occupancy_stream_id = stream_id;
-            jitsi_occupancy_last_fetch = now;
-            jitsi_fetch_occupancy(stream_id);
-        }
-    }
-    jitsi_occupancy_tick();
-    window.setInterval(jitsi_occupancy_tick, 300);
 
     // Call-aware left sidebar: speaker/lock icons and participant avatars on
     // channels with a live call, polled from the bulk occupancy feed.
