@@ -223,6 +223,9 @@ def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, An
                 },
                 data=data,
                 ttl=WEB_PUSH_TTL_SECONDS,
+                # High urgency so push services wake a dozing device / closed
+                # browser immediately instead of batching until it's next active.
+                headers={"Urgency": "high"},
                 vapid_private_key=vapid,
                 vapid_claims={"sub": settings.VAPID_CONTACT_EMAIL},
             )
