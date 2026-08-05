@@ -169,6 +169,11 @@ class Stream(models.Model):
 
     topics_policy = models.PositiveSmallIntegerField(default=StreamTopicsPolicyEnum.inherit.value)
 
+    # Whether voice/video calls can be started in this channel. Enabled by
+    # default, so existing channels keep working; turning it off hides the call
+    # affordances and refuses to mint a call token for the channel.
+    voice_video_enabled = models.BooleanField(default=True, db_default=True)
+
     stream_permission_group_settings = {
         "can_add_subscribers_group": GroupPermissionSetting(
             allow_nobody_group=True,
@@ -296,6 +301,7 @@ class Stream(models.Model):
         "can_resolve_topics_group_id",
         "is_recently_active",
         "topics_policy",
+        "voice_video_enabled",
     ]
 
 

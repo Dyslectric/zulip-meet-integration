@@ -314,6 +314,7 @@ def update_stream_backend(
     new_name: str | None = None,
     stream_id: PathOnly[int],
     topics_policy: TopicsPolicy = None,
+    voice_video_enabled: Json[bool] | None = None,
 ) -> HttpResponse:
     # Most settings updates only require metadata access, not content
     # access. We will check for content access further when and where
@@ -447,6 +448,11 @@ def update_stream_backend(
         do_set_stream_property(
             stream, "default_push_notifications", default_push_notifications, user_profile
         )
+
+    if voice_video_enabled is not None:
+        # Metadata access (checked above) is the bar here, same as the other
+        # channel settings: whoever can administer the channel decides.
+        do_set_stream_property(stream, "voice_video_enabled", voice_video_enabled, user_profile)
 
     if is_archived is not None and not is_archived:
         do_unarchive_stream(stream, stream.name, acting_user=user_profile)

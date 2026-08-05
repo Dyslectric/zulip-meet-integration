@@ -13,6 +13,7 @@ from zerver.lib.jitsi_token import (
 )
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import NamedUserGroup, UserProfile
+from zerver.models.streams import get_stream
 from zerver.views.video_calls import EPOCH_SIGNER_SALT
 
 JWT_SETTINGS = dict(
@@ -116,6 +117,39 @@ class JitsiCreateCallTest(ZulipTestCase):
                 },
             )
             self.assert_json_error(result, "Specify exactly one of stream_id or user_ids")
+
+    def test_channel_with_calls_disabled_is_refused(self) -> None:
+        """A channel with voice/video off must not mint a token, even though the
+        client would normally hide the affordance."""
+        self.subscribe(self.user, "Denmark")
+        stream_id = self.get_stream_id("Denmark")
+        stream = get_stream("Denmark", self.user.realm)
+        stream.voice_video_enabled = False
+        stream.save(update_fields=["voice_video_enabled"])
+
+        with self.settings(**JWT_SETTINGS):
+            result = self.client_post("/json/calls/jitsi/create", {"stream_id": stream_id})
+        self.assert_json_error(result, "Voice and video calls are disabled in this channel")
+
+    def test_voice_video_enabled_can_be_toggled(self) -> None:
+        stream_id = self.get_stream_id("Denmark")
+        # Channels allow calls by default, so existing channels keep working.
+        self.assertTrue(get_stream("Denmark", self.user.realm).voice_video_enabled)
+
+        # Changing the setting requires permission to administer the channel.
+        self.login_user(self.example_user("iago"))
+
+        result = self.client_patch(
+            f"/json/streams/{stream_id}", {"voice_video_enabled": orjson.dumps(False).decode()}
+        )
+        self.assert_json_success(result)
+        self.assertFalse(get_stream("Denmark", self.user.realm).voice_video_enabled)
+
+        result = self.client_patch(
+            f"/json/streams/{stream_id}", {"voice_video_enabled": orjson.dumps(True).decode()}
+        )
+        self.assert_json_success(result)
+        self.assertTrue(get_stream("Denmark", self.user.realm).voice_video_enabled)
 
     def test_subscribed_user_gets_a_scoped_token(self) -> None:
         self.subscribe(self.user, "Denmark")

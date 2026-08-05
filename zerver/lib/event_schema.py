@@ -648,6 +648,9 @@ def check_stream_update(
     elif prop == "default_push_notifications":
         assert extra_keys == set()
         assert isinstance(value, bool)
+    elif prop == "voice_video_enabled":
+        assert extra_keys == set()
+        assert isinstance(value, bool)
     else:
         raise AssertionError(f"Unknown property: {prop}")
 

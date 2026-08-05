@@ -24626,6 +24626,14 @@ paths:
                   example: 1
                 topics_policy:
                   $ref: "#/components/schemas/TopicsPolicy"
+                voice_video_enabled:
+                  description: |
+                    Whether voice and video calls can be started in this channel.
+
+                    When disabled, clients hide the call affordances for the channel
+                    and the server refuses to mint a call token for it.
+                  type: boolean
+                  example: false
                 can_add_subscribers_group:
                   allOf:
                     - description: |

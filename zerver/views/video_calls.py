@@ -905,6 +905,10 @@ def create_jitsi_call(
         stream, sub = access_stream_by_id(user, stream_id)
         if sub is None:
             raise JsonableError(_("Not subscribed to this channel"))
+        if not stream.voice_video_enabled:
+            # Enforced here, not just hidden in the UI: without this a client
+            # could still ask for a token for a channel with calls turned off.
+            raise JsonableError(_("Voice and video calls are disabled in this channel"))
         scope = channel_scope(user.realm_id, stream.id)
         # Moderator maps to "may administer this channel", not to "whoever
         # clicked first", which is what default Jitsi would otherwise do.
