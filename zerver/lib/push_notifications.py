@@ -205,10 +205,12 @@ def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, An
     if not subscriptions:
         return
 
+    from py_vapid import Vapid
     from pywebpush import WebPushException, webpush
 
-    # vapid_private_key is stored as base64(PEM).
-    vapid_private_key = base64.b64decode(settings.VAPID_PRIVATE_KEY).decode("utf-8")
+    # vapid_private_key is stored as base64(PEM). pywebpush's from_string can't
+    # read PEM, so build a Vapid object from the decoded PEM and pass that.
+    vapid = Vapid.from_pem(base64.b64decode(settings.VAPID_PRIVATE_KEY))
     data = orjson.dumps(payload)
 
     stale_subscription_ids: list[int] = []
@@ -221,7 +223,7 @@ def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, An
                 },
                 data=data,
                 ttl=WEB_PUSH_TTL_SECONDS,
-                vapid_private_key=vapid_private_key,
+                vapid_private_key=vapid,
                 vapid_claims={"sub": settings.VAPID_CONTACT_EMAIL},
             )
         except WebPushException as e:

@@ -2,6 +2,8 @@ import base64
 from unittest import mock
 
 import orjson
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException
 
 from zerver.actions.message_flags import do_clear_mobile_push_notifications_for_ids
@@ -13,9 +15,19 @@ from zerver.lib.push_notifications import (
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import UserMessage, UserProfile, WebPushSubscription
 
+def _generate_vapid_private_key() -> str:
+    key = ec.generate_private_key(ec.SECP256R1())
+    pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    return base64.b64encode(pem).decode()
+
+
 VAPID_TEST_SETTINGS = dict(
     WEB_PUSH_ENABLED=True,
-    VAPID_PRIVATE_KEY=base64.b64encode(b"dummy-pem").decode(),
+    VAPID_PRIVATE_KEY=_generate_vapid_private_key(),
     VAPID_PUBLIC_KEY="test-public-key",
     VAPID_CONTACT_EMAIL="mailto:admin@example.com",
 )
