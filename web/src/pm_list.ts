@@ -5,6 +5,7 @@ import * as z from "zod/mini";
 import * as blueslip from "./blueslip.ts";
 import type {Filter} from "./filter.ts";
 import {$t} from "./i18n.ts";
+import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 import * as keydown_util from "./keydown_util.ts";
 import {ListCursor} from "./list_cursor.ts";
 import {localstorage} from "./localstorage.ts";
@@ -238,6 +239,10 @@ export function update_private_messages(): void {
         });
         set_dom_to(new_dom, zoomed);
     }
+    // Rebuilding the list empties the call-state slot on each row, so restore
+    // it now instead of leaving it blank until the next occupancy poll.
+    jitsi_sidebar.apply_dm_rows();
+
     // Make sure to update the left sidebar heights after updating
     // direct messages.
     setTimeout(resize.resize_stream_filters_container, 0);

@@ -25,6 +25,17 @@
     background-color: var(--color-background-tab-hover, hsl(0deg 0% 0% / 8%));
 }
 
+/* A DM row's marker area is baseline-aligned (see .dm-markers-and-unreads in
+   left_sidebar.css), and an icon has no text baseline of its own, so it rides
+   above the conversation name instead of sitting level with it. Nudge our two
+   icons down onto the text baseline. Channel rows need none of this: their
+   controls live in a centered grid area. */
+.dm-markers-and-unreads .jitsi-sidebar-call-button,
+.dm-markers-and-unreads .jitsi-dm-speaker-slot {
+    position: relative;
+    top: 0.15em;
+}
+
 /* Speaker beside a DM/group DM label while a call is live there. Filled in by
    jitsi_sidebar.ts; collapsed when empty so it takes no space. */
 .jitsi-dm-speaker-slot:empty {

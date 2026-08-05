@@ -115,10 +115,10 @@ function ingest(raw: unknown): void {
 }
 
 // DM conversations are identified by their full participant set, so a call's
-// key is every participant sorted. The sidebar row lists everyone but you,
-// hence add_self below.
+// key is every participant sorted. A row may or may not list you among its
+// participants, so callers add you and the Set below collapses the duplicate.
 function dm_key(user_ids: number[]): string {
-    return [...new Set(user_ids)].sort((a, b) => a - b).join(",");
+    return [...new Set(user_ids)].toSorted((a, b) => a - b).join(",");
 }
 
 // A pushed jitsi_occupancy client event: an instant update for one channel, so the
@@ -156,7 +156,10 @@ function apply(): void {
 
 // A DM/group row gets a speaker beside its label while a call is live there.
 // Unlike channels there are no avatars: the row is already a list of people.
-function apply_dm_rows(): void {
+// Exported because the speaker lives in a slot the DM list owns: re-rendering
+// the list empties it, so pm_list calls this after it rebuilds rather than
+// leaving the speaker missing until the next poll.
+export function apply_dm_rows(): void {
     const me = people.my_current_user_id();
     for (const li of $(".dm-list-item[data-user-ids-string]")) {
         const slot = li.querySelector(".jitsi-dm-speaker-slot");
