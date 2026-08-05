@@ -1,11 +1,14 @@
 import time
+from datetime import datetime, timezone
 from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 import jwt
 import orjson
+import time_machine
 from django.core.signing import Signer
 
+from zerver.actions.user_groups import check_add_user_group
 from zerver.lib.jitsi_token import (
     JitsiTokenError,
     derive_room_name,
@@ -13,7 +16,7 @@ from zerver.lib.jitsi_token import (
     mint_jitsi_token,
 )
 from zerver.lib.test_classes import ZulipTestCase
-from zerver.models import NamedUserGroup, UserProfile
+from zerver.models import UserProfile
 from zerver.models.streams import get_stream
 from zerver.views.video_calls import EPOCH_SIGNER_SALT
 
@@ -276,15 +279,16 @@ class JitsiCreateCallTest(ZulipTestCase):
     def test_tenant_comes_from_group_membership(self) -> None:
         self.subscribe(self.user, "Denmark")
         stream_id = self.get_stream_id("Denmark")
-        group = NamedUserGroup.objects.create(
-            name="conf-engineering",
-            realm=self.user.realm,
-            can_mention_group=self.user.realm.can_access_all_users_group,
-            creator=self.user,
+        # Created through the action rather than the ORM: NamedUserGroup's own
+        # realm column is realm_for_sharding, so objects.create(realm=...) leaves
+        # it null and the insert is rejected.
+        check_add_user_group(
+            self.user.realm, "conf-engineering", [self.user], acting_user=self.user
         )
-        group.direct_members.add(self.user)
 
-        with self.settings(**{**JWT_SETTINGS, "JITSI_TENANT_BY_GROUP": {"conf-engineering": "Engineering"}}):
+        with self.settings(
+            **{**JWT_SETTINGS, "JITSI_TENANT_BY_GROUP": {"conf-engineering": "Engineering"}}
+        ):
             data = self.assert_json_success(
                 self.client_post("/json/calls/jitsi/create", {"stream_id": stream_id})
             )
@@ -324,7 +328,16 @@ class JitsiCreateCallTest(ZulipTestCase):
                 self.client_post("/json/calls/jitsi/create", {"stream_id": stream_id})
             )
         token = parse_qs(urlsplit(data["url"]).query)["jwt"][0]
-        with self.assertRaises(jwt.ExpiredSignatureError):
+        # Travel past the two-minute lifetime rather than using a negative
+        # leeway: leeway applies to iat as well, and PyJWT checks that first, so
+        # a large negative value makes the token look issued in the future
+        # (ImmatureSignatureError) instead of expired.
+        with (
+            time_machine.travel(
+                datetime.fromtimestamp(time.time() + 300, tz=timezone.utc), tick=False
+            ),
+            self.assertRaises(jwt.ExpiredSignatureError),
+        ):
             jwt.decode(
                 token,
                 JWT_SETTINGS["JITSI_JWT_APP_SECRET"],
@@ -332,7 +345,6 @@ class JitsiCreateCallTest(ZulipTestCase):
                 audience="jitsi",
                 issuer="zulip",
                 options={"verify_exp": True},
-                leeway=-(int(time.time()) + 1),
             )
 
 

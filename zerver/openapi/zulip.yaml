@@ -27279,13 +27279,15 @@ paths:
                     `stream_id` and `user_ids` must be specified.
                   example: 7
                 user_ids:
-                  type: array
-                  items:
-                    type: integer
                   description: |
                     The IDs of the other participants in a direct message
                     conversation. Exactly one of `stream_id` and `user_ids`
                     must be specified.
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: integer
                   example: [9, 10]
                 epoch_token:
                   type: string
