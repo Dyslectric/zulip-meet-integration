@@ -158,6 +158,13 @@ LOGIN_URL = "/accounts/login/"
 APNS_TOKEN_KEY_FILE: str | None = None
 APNS_CERT_FILE: str | None = None
 
+# Likewise ignore any VAPID keypair in the developer's secrets file, so that
+# whether Web Push is "configured" doesn't depend on the local environment.
+# Tests that need it enable it explicitly via self.settings().
+VAPID_PUBLIC_KEY: str | None = None
+VAPID_PRIVATE_KEY: str | None = None
+WEB_PUSH_ENABLED = False
+
 # By default will not send emails when login occurs.
 # Explicitly set this to True within tests that must have this on.
 SEND_LOGIN_EMAILS = False

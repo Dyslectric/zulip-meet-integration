@@ -9,12 +9,14 @@ from pywebpush import WebPushException
 from zerver.actions.message_flags import do_clear_mobile_push_notifications_for_ids
 from zerver.actions.message_send import get_recipient_info
 from zerver.lib.push_notifications import (
+    handle_push_notification,
     has_web_push_credentials,
     push_notifications_configured,
     send_web_push_notifications,
 )
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import Message, UserMessage, UserProfile, WebPushSubscription
+from zerver.models.scheduled_jobs import NotificationTriggers
 
 def _generate_vapid_private_key() -> str:
     key = ec.generate_private_key(ec.SECP256R1())
@@ -202,6 +204,43 @@ class WebPushCountsAsDeviceTest(ZulipTestCase):
         )
         # A browser subscription must count, or no push is ever enqueued.
         self.assertIn(hamlet.id, self._push_registered_ids(hamlet, othello))
+
+
+class WebPushReadMessageTest(ZulipTestCase):
+    def test_read_message_still_delivers_web_push(self) -> None:
+        """Reading on one device must not silence the user's other browsers."""
+        hamlet = self.example_user("hamlet")
+        othello = self.example_user("othello")
+        WebPushSubscription.objects.create(
+            user_profile=hamlet, endpoint="https://push.example.com/h", p256dh="p", auth="a"
+        )
+        with mock.patch("pywebpush.webpush"):
+            message_id = self.send_personal_message(othello, hamlet)
+
+        # Simulate another session marking it read before the worker ran.
+        user_message = UserMessage.objects.get(user_profile=hamlet, message_id=message_id)
+        user_message.flags.read = True
+        user_message.flags.active_mobile_push_notification = False
+        user_message.save(update_fields=["flags"])
+
+        event = {
+            "user_profile_id": hamlet.id,
+            "message_id": message_id,
+            "trigger": NotificationTriggers.DIRECT_MESSAGE,
+            "type": "add",
+            "mentioned_user_group_id": None,
+        }
+        with (
+            self.settings(**VAPID_TEST_SETTINGS),
+            mock.patch("pywebpush.webpush") as webpush_mock,
+        ):
+            handle_push_notification(hamlet.id, event)
+
+        webpush_mock.assert_called_once()
+        # The flag stays clear, so this notification also won't be revoked
+        # out from under the other devices.
+        user_message.refresh_from_db()
+        self.assertFalse(user_message.flags.active_mobile_push_notification)
 
 
 class WebPushRevocationTest(ZulipTestCase):
