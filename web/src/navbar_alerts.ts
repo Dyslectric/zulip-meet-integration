@@ -45,10 +45,40 @@ function close_navbar_banner_and_resize($banner: JQuery): void {
     $(window).trigger("resize");
 }
 
+// How long to leave the notifications banner alone after the user closed it, or
+// after asking for permission did not result in a grant. Without this the banner
+// returns on every load, which is what happens in a context where the permission
+// does not stick -- an installed iOS web app, for instance, whose permission and
+// storage are separate from the browser's and can be reset.
+const NOTIFICATIONS_BANNER_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+const NOTIFICATIONS_BANNER_SNOOZED_AT = "notificationsBannerSnoozedAt";
+
+function notifications_banner_is_snoozed(ls: LocalStorage): boolean {
+    if (!localstorage.supported()) {
+        return false;
+    }
+    const snoozed_at = ls.get(NOTIFICATIONS_BANNER_SNOOZED_AT);
+    if (typeof snoozed_at !== "number") {
+        return false;
+    }
+    return Date.now() - snoozed_at < NOTIFICATIONS_BANNER_SNOOZE_MS;
+}
+
+function snooze_notifications_banner(): void {
+    const ls = localstorage();
+    if (localstorage.supported()) {
+        ls.set(NOTIFICATIONS_BANNER_SNOOZED_AT, Date.now());
+    }
+}
+
 export function should_show_desktop_notifications_banner(ls: LocalStorage): boolean {
     // if the user said to never show banner on this computer again, it will
     // be stored as `true` so we want to negate that.
     if (localstorage.supported() && ls.get("dontAskForNotifications") === true) {
+        return false;
+    }
+
+    if (notifications_banner_is_snoozed(ls)) {
         return false;
     }
 
@@ -580,6 +610,11 @@ export function initialize(): void {
             e.preventDefault();
             e.stopPropagation();
             const $banner = $(this).closest(".banner");
+            if ($banner.attr("data-process") === "desktop-notifications") {
+                // "Not now" for the notifications banner means not now, rather
+                // than again on the next load.
+                snooze_notifications_banner();
+            }
             banners.close($banner);
             $(window).trigger("resize");
         },
@@ -597,6 +632,11 @@ export function initialize(): void {
                     // Subscribe from this user gesture, so browsers that only
                     // permit subscribing after a grant do so right away.
                     void web_push.subscribe();
+                } else {
+                    // Still "default": the prompt was dismissed, or the grant
+                    // did not stick in this context. Either way, stop asking on
+                    // every load.
+                    snooze_notifications_banner();
                 }
                 if (permission === "granted" || permission === "denied") {
                     close_navbar_banner_and_resize($banner);

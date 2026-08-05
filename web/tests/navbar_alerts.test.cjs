@@ -59,6 +59,16 @@ test("should_show_desktop_notifications_banner", ({override}) => {
     assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), true);
     override(util, "is_mobile", () => false);
 
+    // Having recently asked (or been dismissed), stay quiet for a while rather
+    // than returning on every load. This matters where the permission does not
+    // stick, such as an installed iOS web app.
+    ls.set("notificationsBannerSnoozedAt", Date.now());
+    assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), false);
+    // ...but come back once the snooze has expired.
+    ls.set("notificationsBannerSnoozedAt", Date.now() - 8 * 24 * 60 * 60 * 1000);
+    assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), true);
+    ls.set("notificationsBannerSnoozedAt", undefined);
+
     // Don't ask for permission if notification is denied by user.
     override(desktop_notifications, "permission_state", () => "denied");
     assert.equal(navbar_alerts.should_show_desktop_notifications_banner(ls), false);

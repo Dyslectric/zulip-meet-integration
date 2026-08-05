@@ -63,6 +63,27 @@ export function is_supported(): boolean {
     return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+let listening_for_subscription_changes = false;
+
+// The service worker re-subscribes when the browser retires a subscription, but
+// it cannot POST the new one itself (no CSRF token), so it asks us to.
+function listen_for_subscription_changes(): void {
+    if (listening_for_subscription_changes) {
+        return;
+    }
+    listening_for_subscription_changes = true;
+    navigator.serviceWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
+        if (
+            typeof event.data === "object" &&
+            event.data !== null &&
+            "type" in event.data &&
+            event.data.type === "web_push_subscription_changed"
+        ) {
+            void subscribe();
+        }
+    });
+}
+
 // Registers the service worker and makes sure this browser is subscribed.
 // The caller must already have notification permission granted.
 export async function subscribe(): Promise<void> {
@@ -83,6 +104,8 @@ export async function subscribe(): Promise<void> {
         // it; there's nothing actionable to do here.
         return;
     }
+
+    listen_for_subscription_changes();
 
     let subscription = await registration.pushManager.getSubscription();
     subscription ??= await registration.pushManager.subscribe({

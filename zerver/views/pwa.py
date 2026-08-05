@@ -87,6 +87,39 @@ self.addEventListener("push", (event) => {
     event.waitUntil(self.registration.showNotification(title, options));
 });
 
+/* The browser can retire our subscription on its own -- a worker update, key
+ * rotation, storage pressure, or the push service expiring the endpoint. Left
+ * alone, the stored endpoint is dead and this device silently stops receiving
+ * notifications until the page is next loaded. Re-subscribe immediately, and ask
+ * any open client to send the new subscription to the server: a worker has no
+ * CSRF token, so it cannot do that itself. With no client open, the next page
+ * load saves it, since the client always stores its current subscription.
+ */
+self.addEventListener("pushsubscriptionchange", (event) => {
+    event.waitUntil(
+        (async () => {
+            let subscription = event.newSubscription;
+            if (!subscription) {
+                const key = event.oldSubscription?.options?.applicationServerKey;
+                if (!key) {
+                    return;
+                }
+                subscription = await self.registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: key,
+                });
+            }
+            const clients = await self.clients.matchAll({
+                type: "window",
+                includeUncontrolled: true,
+            });
+            for (const client of clients) {
+                client.postMessage({type: "web_push_subscription_changed"});
+            }
+        })(),
+    );
+});
+
 self.addEventListener("notificationclick", (event) => {
     event.notification.close();
     const url = (event.notification.data && event.notification.data.url) || "/";
