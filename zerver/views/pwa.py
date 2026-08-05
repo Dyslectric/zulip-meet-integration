@@ -1,5 +1,3 @@
-import os
-
 from django.conf import settings
 from django.contrib.staticfiles.storage import staticfiles_storage
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -43,6 +41,75 @@ def manifest_webmanifest(request: HttpRequest) -> JsonResponse:
     return JsonResponse(manifest, content_type="application/manifest+json")
 
 
+# The Web Push service worker, inlined so it is always present in the running
+# deployment. Production ships compiled webpack bundles, not the raw web/ source
+# tree, so this cannot be read from a file on disk. Push-only: no fetch handler
+# and no caching, so it can't interfere with Zulip's asset pipeline.
+SERVICE_WORKER_JS = """\
+/* Zulip Web Push service worker. Payloads come from
+ * zerver.lib.push_notifications:
+ *   add:    {type: "add", title, body, url, tag, message_id, icon?}
+ *   remove: {type: "remove", message_ids: [...]}
+ */
+self.addEventListener("push", (event) => {
+    if (!event.data) {
+        return;
+    }
+
+    let payload;
+    try {
+        payload = event.data.json();
+    } catch {
+        return;
+    }
+
+    if (payload.type === "remove") {
+        const ids = new Set(payload.message_ids ?? []);
+        event.waitUntil(
+            self.registration.getNotifications().then((notifications) => {
+                for (const notification of notifications) {
+                    if (notification.data && ids.has(notification.data.message_id)) {
+                        notification.close();
+                    }
+                }
+            }),
+        );
+        return;
+    }
+
+    const title = payload.title ?? "Zulip";
+    const options = {
+        body: payload.body ?? "",
+        icon: payload.icon ?? "/static/images/logo/zulip-icon-512x512.png",
+        tag: payload.tag,
+        data: {url: payload.url ?? "/", message_id: payload.message_id},
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+    event.notification.close();
+    const url = (event.notification.data && event.notification.data.url) || "/";
+    event.waitUntil(
+        self.clients
+            .matchAll({type: "window", includeUncontrolled: true})
+            .then((clientList) => {
+                for (const client of clientList) {
+                    if ("focus" in client) {
+                        void client.focus();
+                        if ("navigate" in client) {
+                            void client.navigate(url);
+                        }
+                        return undefined;
+                    }
+                }
+                return self.clients.openWindow(url);
+            }),
+    );
+});
+"""
+
+
 def service_worker(request: HttpRequest) -> HttpResponse:
     """Serve the Web Push service worker from the site root.
 
@@ -51,10 +118,7 @@ def service_worker(request: HttpRequest) -> HttpResponse:
     it receive push for the whole origin; a worker under ``/static/`` could
     only control ``/static/``.
     """
-    path = os.path.join(settings.DEPLOY_ROOT, "web", "service-worker.js")
-    with open(path, "rb") as f:
-        content = f.read()
-    response = HttpResponse(content, content_type="text/javascript")
+    response = HttpResponse(SERVICE_WORKER_JS, content_type="text/javascript")
     response["Service-Worker-Allowed"] = "/"
     return response
 
