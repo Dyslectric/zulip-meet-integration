@@ -7,13 +7,14 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException
 
 from zerver.actions.message_flags import do_clear_mobile_push_notifications_for_ids
+from zerver.actions.message_send import get_recipient_info
 from zerver.lib.push_notifications import (
     has_web_push_credentials,
     push_notifications_configured,
     send_web_push_notifications,
 )
 from zerver.lib.test_classes import ZulipTestCase
-from zerver.models import UserMessage, UserProfile, WebPushSubscription
+from zerver.models import Message, UserMessage, UserProfile, WebPushSubscription
 
 def _generate_vapid_private_key() -> str:
     key = ec.generate_private_key(ec.SECP256R1())
@@ -145,6 +146,20 @@ class WebPushSenderTest(ZulipTestCase):
             send_web_push_notifications(hamlet, {"type": "add"})
         webpush_mock.assert_not_called()
 
+    def test_transport_error_does_not_abort_batch(self) -> None:
+        # A malformed key or unreachable push service raises something other
+        # than WebPushException; that must not propagate into the worker.
+        hamlet = self.example_user("hamlet")
+        sub = self._subscribe(hamlet)
+        with (
+            self.settings(**VAPID_TEST_SETTINGS),
+            mock.patch("pywebpush.webpush", side_effect=ValueError("bad key")),
+            self.assertLogs("zerver.lib.push_notifications", level="ERROR"),
+        ):
+            send_web_push_notifications(hamlet, {"type": "add"})
+        # Not a 404/410, so the subscription is kept.
+        self.assertTrue(WebPushSubscription.objects.filter(id=sub.id).exists())
+
     def test_stale_subscription_pruned(self) -> None:
         hamlet = self.example_user("hamlet")
         sub = self._subscribe(hamlet)
@@ -159,6 +174,36 @@ class WebPushSenderTest(ZulipTestCase):
         self.assertFalse(WebPushSubscription.objects.filter(id=sub.id).exists())
 
 
+class WebPushCountsAsDeviceTest(ZulipTestCase):
+    def _push_registered_ids(self, recipient_user: UserProfile, sender: UserProfile) -> set[int]:
+        # Send a DM just to get at its Recipient row. Sending may now enqueue a
+        # push notification, so stub the actual delivery out.
+        with mock.patch("pywebpush.webpush"):
+            message_id = self.send_personal_message(sender, recipient_user)
+        recipient = Message.objects.get(id=message_id).recipient
+        info = get_recipient_info(
+            realm_id=recipient_user.realm_id,
+            recipient=recipient,
+            sender_id=sender.id,
+            stream_topic=None,
+        )
+        return info.push_device_registered_user_ids
+
+    def test_web_push_subscription_counts_as_registered_device(self) -> None:
+        hamlet = self.example_user("hamlet")
+        othello = self.example_user("othello")
+
+        # With no subscription, hamlet is not push-registered, so Zulip would
+        # never enqueue a push notification for him.
+        self.assertNotIn(hamlet.id, self._push_registered_ids(hamlet, othello))
+
+        WebPushSubscription.objects.create(
+            user_profile=hamlet, endpoint="https://push.example.com/h", p256dh="p", auth="a"
+        )
+        # A browser subscription must count, or no push is ever enqueued.
+        self.assertIn(hamlet.id, self._push_registered_ids(hamlet, othello))
+
+
 class WebPushRevocationTest(ZulipTestCase):
     def test_web_push_subscription_gets_remove_event(self) -> None:
         hamlet = self.example_user("hamlet")
@@ -166,7 +211,9 @@ class WebPushRevocationTest(ZulipTestCase):
         WebPushSubscription.objects.create(
             user_profile=hamlet, endpoint="https://push.example.com/h", p256dh="p", auth="a"
         )
-        message_id = self.send_personal_message(othello, hamlet)
+        # Sending now enqueues a web push for hamlet; stub out delivery.
+        with mock.patch("pywebpush.webpush"):
+            message_id = self.send_personal_message(othello, hamlet)
         user_message = UserMessage.objects.get(user_profile=hamlet, message_id=message_id)
         user_message.flags.active_mobile_push_notification = True
         user_message.save(update_fields=["flags"])

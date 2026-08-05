@@ -113,6 +113,7 @@ from zerver.models import (
     UserPresence,
     UserProfile,
     UserTopic,
+    WebPushSubscription,
 )
 from zerver.models.clients import get_client
 from zerver.models.groups import SystemGroups, get_realm_system_groups_name_dict
@@ -460,6 +461,10 @@ def get_recipient_info(
                         Device.objects.filter(user_id=OuterRef("id"), push_token_id__isnull=False)
                     )
                     | Exists(PushDeviceToken.objects.filter(user_id=OuterRef("id")))
+                    # A browser Web Push subscription is a registered push
+                    # device too; without this, no push notification is ever
+                    # enqueued for a web-push-only user.
+                    | Exists(WebPushSubscription.objects.filter(user_profile_id=OuterRef("id")))
                 )
                 .values(
                     "id",

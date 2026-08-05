@@ -236,6 +236,11 @@ def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, An
                 stale_subscription_ids.append(subscription.id)
             else:
                 logger.warning("Web push to subscription %d failed: %s", subscription.id, e)
+        except Exception:
+            # A malformed subscription or a transport-level error (e.g. the push
+            # service being unreachable) must not abort the whole batch, or one
+            # bad row would drop this notification for every other device too.
+            logger.exception("Web push to subscription %d raised", subscription.id)
 
     if stale_subscription_ids:
         WebPushSubscription.objects.filter(id__in=stale_subscription_ids).delete()
