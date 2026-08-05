@@ -439,10 +439,12 @@ module = [
     "jsonref.*",
     "ldap.*", # https://github.com/python-ldap/python-ldap/issues/368
     "onelogin.*",
+    "py_vapid.*",
     "pyinotify.*",
     "pyoembed.*",
     "pyuca.*",
     "pyvips.*",
+    "pywebpush.*",
     "scim2_filter_parser.attr_paths",
     "talon_core.*",
     "tlds.*",
