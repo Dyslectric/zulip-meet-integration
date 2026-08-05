@@ -74,6 +74,16 @@
       help_link="/help/configure-who-can-start-new-topics" }}
 
     <div class="input-group">
+        {{! A plainer way to say topics_policy = empty_topic_only: everything is
+        posted to the single unnamed topic. Drives the dropdown below, so
+        saving goes through the normal settings machinery. }}
+        <div class="settings-checkbox-wrapper single-threaded-channel-setting">
+            <label class="checkbox">
+                <input type="checkbox" class="single-threaded-channel-toggle inline-block" id="{{prefix}}single_threaded_channel" {{#if (eq sub.topics_policy "empty_topic_only")}}checked="checked"{{/if}} />
+                <span class="rendered-checkbox"></span>
+            </label>
+            <label for="{{prefix}}single_threaded_channel" class="inline">{{t "Single-threaded channel"}}</label>
+        </div>
         <label for="{{prefix}}topics_policy" class="settings-field-label">{{> stream_topics_policy_label .}}</label>
         <select name="stream-topics-policy-setting" id="{{prefix}}topics_policy" class="prop-element settings_select bootstrap-focus-style" data-setting-widget-type="string">
             {{> ../settings/dropdown_options_widget option_values=(object_values stream_topics_policy_values)}}

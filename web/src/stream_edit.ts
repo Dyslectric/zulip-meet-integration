@@ -804,6 +804,34 @@ export function initialize(): void {
         },
     );
 
+    // The "Single-threaded channel" checkbox is a friendlier face on the
+    // topics-policy dropdown: it drives the dropdown and then lets the normal
+    // save/discard machinery notice the change, rather than saving separately.
+    $("#channels_overlay_container").on("change", ".single-threaded-channel-toggle", (e) => {
+        const values = settings_config.get_stream_topics_policy_values();
+        const $checkbox = $(e.currentTarget);
+        const code = $checkbox.is(":checked") ? values.empty_topic_only.code : values.inherit.code;
+        $checkbox
+            .closest(".input-group")
+            .find("select[name='stream-topics-policy-setting']")
+            .val(code)
+            .trigger("change");
+    });
+
+    // Keep the checkbox honest if the dropdown itself is changed.
+    $("#channels_overlay_container").on(
+        "change",
+        "select[name='stream-topics-policy-setting']",
+        (e) => {
+            const values = settings_config.get_stream_topics_policy_values();
+            const $select = $(e.currentTarget);
+            $select
+                .closest(".input-group")
+                .find(".single-threaded-channel-toggle")
+                .prop("checked", $select.val() === values.empty_topic_only.code);
+        },
+    );
+
     $("#channels_overlay_container").on("keydown", "#change_stream_description", (e) => {
         // Stream descriptions cannot be multiline, so disable enter key
         // to prevent new line

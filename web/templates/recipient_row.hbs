@@ -18,6 +18,9 @@
             <span class="message-header-stream-archived"><i class="archived-indicator">({{t 'archived' }})</i></span>
             {{/if}}
         </a>
+        {{! A single-threaded channel has only the unnamed topic, so the
+        separator and topic name would say nothing. }}
+        {{#unless is_single_threaded_channel}}
         <span class="stream_topic_separator"><i class="zulip-icon zulip-icon-chevron-right"></i></span>
 
         {{! hidden narrow icon for copy-pasting }}
@@ -37,6 +40,7 @@
                 {{/if}}
             </a>
         </span>
+        {{/unless}}
         <span class="recipient_bar_controls no-select">
             <span class="topic_edit hidden-for-spectators"></span>
 

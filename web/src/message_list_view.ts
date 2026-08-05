@@ -111,6 +111,7 @@ export type MessageGroup = {
           topic: string;
           topic_display_name: string;
           is_empty_string_topic: boolean;
+          is_single_threaded_channel: boolean;
           topic_is_resolved: boolean;
           topic_links: TopicLink[] | undefined;
           topic_url: string | undefined;
@@ -432,6 +433,9 @@ export function populate_group_from_message(
             topic,
             topic_display_name: util.get_final_topic_display_name(topic),
             is_empty_string_topic: topic === "",
+            // A single-threaded channel has no meaningful topic to show, so the
+            // recipient bar drops the separator and topic entirely.
+            is_single_threaded_channel: stream_data.is_empty_topic_only_channel(stream_id),
             recipient_bar_color: stream_color.get_recipient_bar_color(sub.color),
             stream_privacy_icon_color: stream_color.get_stream_privacy_icon_color(sub.color),
             invite_only: sub.invite_only,

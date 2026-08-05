@@ -527,6 +527,14 @@ export function rebuild_left_sidebar(
     stream_id: number,
     for_search = false,
 ): void {
+    if (stream_data.is_empty_topic_only_channel(stream_id)) {
+        // A single-threaded channel has only the unnamed "general chat" topic,
+        // so listing it under the channel is noise. Clear anything a previous
+        // channel left behind rather than leaving a stale list on screen.
+        clear();
+        return;
+    }
+
     if (zoomed) {
         if (zoomed_in_widget?.my_stream_id !== stream_id) {
             clear_zoomed();
