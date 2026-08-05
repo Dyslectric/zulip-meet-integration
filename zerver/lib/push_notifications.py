@@ -16,6 +16,7 @@ import lxml.html
 import orjson
 from aioapns.common import NotificationResult, PushType
 from django.conf import settings
+from django.contrib.staticfiles.storage import staticfiles_storage
 from django.db import transaction
 from django.db.models import F, Q, QuerySet
 from django.db.models.functions import Lower
@@ -1988,6 +1989,8 @@ def handle_push_notification(user_profile_id: int, missed_message: dict[str, Any
                 "body": body,
                 # TODO: deep-link to the specific conversation instead of the app root.
                 "url": user_profile.realm.url,
+                # Correctly-hashed static URL, so the icon resolves in production.
+                "icon": staticfiles_storage.url("images/logo/zulip-icon-512x512.png"),
                 "tag": str(message.id),
                 "message_id": message.id,
             },

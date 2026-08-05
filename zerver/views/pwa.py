@@ -80,7 +80,7 @@ self.addEventListener("push", (event) => {
     const title = payload.title ?? "Zulip";
     const options = {
         body: payload.body ?? "",
-        icon: payload.icon ?? "/static/images/logo/zulip-icon-512x512.png",
+        icon: payload.icon,
         tag: payload.tag,
         data: {url: payload.url ?? "/", message_id: payload.message_id},
     };
