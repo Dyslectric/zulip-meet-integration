@@ -84,6 +84,24 @@ function listen_for_subscription_changes(): void {
     });
 }
 
+// Whether this browser already holds a push subscription. Worth knowing
+// independently of the permission property, which is not reliable everywhere:
+// if we are subscribed, there is nothing to ask the user for.
+export async function has_active_subscription(): Promise<boolean> {
+    if (!is_supported()) {
+        return false;
+    }
+    try {
+        const registration = await navigator.serviceWorker.getRegistration("/");
+        if (registration === undefined) {
+            return false;
+        }
+        return (await registration.pushManager.getSubscription()) !== null;
+    } catch {
+        return false;
+    }
+}
+
 // Registers the service worker and makes sure this browser is subscribed.
 // The caller must already have notification permission granted.
 export async function subscribe(): Promise<void> {

@@ -11,6 +11,7 @@ import * as banners from "./banners.ts";
 import * as blueslip from "./blueslip.ts";
 import * as channel from "./channel.ts";
 import * as confirm_dialog from "./confirm_dialog.ts";
+import * as desktop_notifications from "./desktop_notifications.ts";
 import * as dropdown_widget from "./dropdown_widget.ts";
 import {$t, $t_html} from "./i18n.ts";
 import * as message_notifications from "./message_notifications.ts";
@@ -402,20 +403,25 @@ export function set_up(settings_panel: SettingsPanel): void {
 
     $container.on("click", ".desktop-notifications-request", (e) => {
         e.preventDefault();
-        // This is only accessed via the notifications banner, so we
-        // do not need to do a mobile check here--as that banner is
-        // not shown in a mobile context anyway.
         void (async () => {
-            const permission = await Notification.requestPermission();
+            // Reads the resulting permission rather than trusting what the
+            // request resolved with, and cannot throw.
+            const permission = await desktop_notifications.request_permission_and_get_state();
             if (permission === "granted") {
                 update_desktop_notification_banner();
                 void web_push.subscribe();
-            } else if (permission === "denied") {
-                window.open(
-                    "/help/desktop-notifications#check-platform-settings",
-                    "_blank",
-                    "noopener noreferrer",
-                );
+            } else {
+                // Denied, or still "default" because the prompt was dismissed
+                // or the grant did not stick here. Either way, stop offering the
+                // navbar banner on every load.
+                desktop_notifications.snooze_notifications_banner();
+                if (permission === "denied") {
+                    window.open(
+                        "/help/desktop-notifications#check-platform-settings",
+                        "_blank",
+                        "noopener noreferrer",
+                    );
+                }
             }
         })();
     });

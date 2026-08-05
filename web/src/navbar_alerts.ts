@@ -38,37 +38,20 @@ function open_navbar_banner_and_resize(banner: AlertBanner): void {
     $(window).trigger("resize");
 }
 
+function close_desktop_notifications_banner(): void {
+    const $banner = $("#navbar_alerts_wrapper").find(
+        '.banner[data-process="desktop-notifications"]',
+    );
+    if ($banner.length > 0) {
+        close_navbar_banner_and_resize($banner);
+    }
+}
+
 function close_navbar_banner_and_resize($banner: JQuery): void {
     banners.close($banner);
     // Closing navbar banners requires a resize event to
     // recalculate the navbar-fixed-container height.
     $(window).trigger("resize");
-}
-
-// How long to leave the notifications banner alone after the user closed it, or
-// after asking for permission did not result in a grant. Without this the banner
-// returns on every load, which is what happens in a context where the permission
-// does not stick -- an installed iOS web app, for instance, whose permission and
-// storage are separate from the browser's and can be reset.
-const NOTIFICATIONS_BANNER_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
-const NOTIFICATIONS_BANNER_SNOOZED_AT = "notificationsBannerSnoozedAt";
-
-function notifications_banner_is_snoozed(ls: LocalStorage): boolean {
-    if (!localstorage.supported()) {
-        return false;
-    }
-    const snoozed_at = ls.get(NOTIFICATIONS_BANNER_SNOOZED_AT);
-    if (typeof snoozed_at !== "number") {
-        return false;
-    }
-    return Date.now() - snoozed_at < NOTIFICATIONS_BANNER_SNOOZE_MS;
-}
-
-function snooze_notifications_banner(): void {
-    const ls = localstorage();
-    if (localstorage.supported()) {
-        ls.set(NOTIFICATIONS_BANNER_SNOOZED_AT, Date.now());
-    }
 }
 
 export function should_show_desktop_notifications_banner(ls: LocalStorage): boolean {
@@ -78,7 +61,7 @@ export function should_show_desktop_notifications_banner(ls: LocalStorage): bool
         return false;
     }
 
-    if (notifications_banner_is_snoozed(ls)) {
+    if (desktop_notifications.notifications_banner_is_snoozed()) {
         return false;
     }
 
@@ -598,6 +581,27 @@ export function initialize(): void {
         maybe_toggle_empty_required_profile_fields_banner();
     }
 
+    // Two safety nets for a context where the permission property is not a
+    // reliable account of reality -- an installed iOS web app, whose permission
+    // and storage are separate from the browser's and can be reset, is the case
+    // these exist for.
+    //
+    // Holding a subscription means the user is already set up, whatever the
+    // permission property says, so stop offering.
+    void (async () => {
+        if (await web_push.has_active_subscription()) {
+            desktop_notifications.snooze_notifications_banner();
+            close_desktop_notifications_banner();
+        }
+    })();
+
+    // And if permission arrives some other way, act on it rather than leaving a
+    // stale banner up.
+    desktop_notifications.watch_permission_granted(() => {
+        void web_push.subscribe();
+        close_desktop_notifications_banner();
+    });
+
     // Configure click handlers.
 
     $("#navbar_alerts_wrapper").on(
@@ -613,7 +617,7 @@ export function initialize(): void {
             if ($banner.attr("data-process") === "desktop-notifications") {
                 // "Not now" for the notifications banner means not now, rather
                 // than again on the next load.
-                snooze_notifications_banner();
+                desktop_notifications.snooze_notifications_banner();
             }
             banners.close($banner);
             $(window).trigger("resize");
@@ -626,17 +630,19 @@ export function initialize(): void {
         function (this: HTMLElement): void {
             void (async () => {
                 const $banner = $(this).closest(".banner");
-                const permission =
-                    await desktop_notifications.request_desktop_notifications_permission();
+                // Reads the resulting permission rather than trusting what the
+                // request resolved with, and cannot throw; see
+                // request_permission_and_get_state.
+                const permission = await desktop_notifications.request_permission_and_get_state();
                 if (permission === "granted") {
                     // Subscribe from this user gesture, so browsers that only
                     // permit subscribing after a grant do so right away.
                     void web_push.subscribe();
                 } else {
-                    // Still "default": the prompt was dismissed, or the grant
-                    // did not stick in this context. Either way, stop asking on
-                    // every load.
-                    snooze_notifications_banner();
+                    // Either denied, or still "default" because the prompt was
+                    // dismissed or the grant did not stick in this context.
+                    // Stop offering on every load.
+                    desktop_notifications.snooze_notifications_banner();
                 }
                 if (permission === "granted" || permission === "denied") {
                     close_navbar_banner_and_resize($banner);
