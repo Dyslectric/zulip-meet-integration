@@ -169,10 +169,16 @@ class Stream(models.Model):
 
     topics_policy = models.PositiveSmallIntegerField(default=StreamTopicsPolicyEnum.inherit.value)
 
-    # Whether voice/video calls can be started in this channel. Enabled by
-    # default, so existing channels keep working; turning it off hides the call
-    # affordances and refuses to mint a call token for the channel.
-    voice_video_enabled = models.BooleanField(default=True, db_default=True)
+    # Whether this is a voice channel. Calls exist only on voice channels, so
+    # this is both "is a voice channel" and "may have calls" — there is no
+    # channel that allows calls without being one. Opt-in: it shows the channel
+    # as a speaker, pins it single-threaded, and unlocks text_chat_disabled.
+    voice_video_enabled = models.BooleanField(default=False, db_default=False)
+
+    # Whether this channel carries no text conversation at all: no compose box,
+    # no topics, nothing stored. Only meaningful on a voice channel, where it is
+    # the alternative to being single-threaded, and the server keeps it that way.
+    text_chat_disabled = models.BooleanField(default=False, db_default=False)
 
     stream_permission_group_settings = {
         "can_add_subscribers_group": GroupPermissionSetting(
@@ -302,6 +308,7 @@ class Stream(models.Model):
         "is_recently_active",
         "topics_policy",
         "voice_video_enabled",
+        "text_chat_disabled",
     ]
 
 

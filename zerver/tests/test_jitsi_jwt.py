@@ -94,6 +94,13 @@ class JitsiCreateCallTest(ZulipTestCase):
         super().setUp()
         self.user = self.example_user("hamlet")
         self.login_user(self.user)
+        # Calls exist only on voice channels, and being one is opt-in, so the
+        # channel these tests mint calls for has to be marked as one. Every
+        # channel used to allow calls by default, which is why the tests below
+        # never had to say so.
+        stream = get_stream("Denmark", self.user.realm)
+        stream.voice_video_enabled = True
+        stream.save(update_fields=["voice_video_enabled"])
 
     def decode(self, url: str) -> dict[str, Any]:
         token = parse_qs(urlsplit(url).query)["jwt"][0]
@@ -141,7 +148,8 @@ class JitsiCreateCallTest(ZulipTestCase):
 
     def test_voice_video_enabled_can_be_toggled(self) -> None:
         stream_id = self.get_stream_id("Denmark")
-        # Channels allow calls by default, so existing channels keep working.
+        # setUp marked this one a voice channel; confirm that took before we
+        # start toggling it.
         self.assertTrue(get_stream("Denmark", self.user.realm).voice_video_enabled)
 
         # Changing the setting requires permission to administer the channel.
@@ -208,13 +216,20 @@ class JitsiCreateCallTest(ZulipTestCase):
             result = self.client_post("/json/calls/jitsi/create", {"stream_id": stream_id})
         self.assert_json_error(result, "Voice and video calls are disabled in this channel")
 
-    def test_a_new_web_public_channel_starts_without_calls(self) -> None:
-        # Channels allow calls by default, so a web-public one has to be created
-        # opted out rather than never opted in.
+    def test_a_new_channel_is_not_a_voice_channel_unless_asked(self) -> None:
+        # Being a voice channel is opt-in: an ordinary new channel is not one,
+        # asking makes it one, and a web-public channel is refused either way
+        # because anyone on the internet can read it.
         realm = self.example_user("hamlet").realm
-        with_calls, _ = create_stream_if_needed(realm, "ordinary")
-        self.assertTrue(with_calls.voice_video_enabled)
-        web_public, _ = create_stream_if_needed(realm, "open to all", is_web_public=True)
+        ordinary, _ = create_stream_if_needed(realm, "ordinary")
+        self.assertFalse(ordinary.voice_video_enabled)
+
+        opted_in, _ = create_stream_if_needed(realm, "with calls", voice_video_enabled=True)
+        self.assertTrue(opted_in.voice_video_enabled)
+
+        web_public, _ = create_stream_if_needed(
+            realm, "open to all", is_web_public=True, voice_video_enabled=True
+        )
         self.assertFalse(web_public.voice_video_enabled)
 
     def test_subscribed_user_gets_a_scoped_token(self) -> None:

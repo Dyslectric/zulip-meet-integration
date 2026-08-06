@@ -198,6 +198,7 @@ class RawStreamDict(TypedDict):
     subscriber_count: int
     topics_policy: str
     voice_video_enabled: bool
+    text_chat_disabled: bool
 
 
 class RawSubscriptionDict(TypedDict):
@@ -266,6 +267,7 @@ class SubscriptionStreamDict(TypedDict):
     subscribers: NotRequired[list[int]]
     topics_policy: str
     voice_video_enabled: bool
+    text_chat_disabled: bool
     wildcard_mentions_notify: bool | None
 
 
@@ -304,6 +306,7 @@ class NeverSubscribedStreamDict(TypedDict):
     subscribers: NotRequired[list[int]]
     topics_policy: str
     voice_video_enabled: bool
+    text_chat_disabled: bool
 
 
 class DefaultStreamDict(TypedDict):
@@ -342,6 +345,7 @@ class DefaultStreamDict(TypedDict):
     subscriber_count: int
     topics_policy: str
     voice_video_enabled: bool
+    text_chat_disabled: bool
     # Computed fields not specified in `Stream.API_FIELDS`
     is_announcement_only: bool
     is_default: NotRequired[bool]

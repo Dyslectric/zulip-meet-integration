@@ -93,6 +93,8 @@ class StreamDict(TypedDict, total=False):
     history_public_to_subscribers: bool | None
     message_retention_days: int | None
     topics_policy: int | None
+    voice_video_enabled: bool | None
+    text_chat_disabled: bool | None
     can_add_subscribers_group: UserGroup | None
     can_administer_channel_group: UserGroup | None
     can_create_topic_group: UserGroup | None
@@ -377,6 +379,8 @@ def create_stream_if_needed(
     stream_description: str = "",
     message_retention_days: int | None = None,
     topics_policy: int | None = None,
+    voice_video_enabled: bool | None = None,
+    text_chat_disabled: bool = False,
     can_add_subscribers_group: UserGroup | None = None,
     can_administer_channel_group: UserGroup | None = None,
     can_create_topic_group: UserGroup | None = None,
@@ -433,11 +437,15 @@ def create_stream_if_needed(
             default_push_notifications=default_push_notifications,
             folder=folder,
             topics_policy=topics_policy,
-            # Calls are for a known set of people, so a channel readable by
-            # unauthenticated visitors does not get them. Channels allow calls by
-            # default, so a web-public one has to opt out here rather than never
-            # opting in.
-            voice_video_enabled=not is_web_public,
+            # Opt-in: a channel is an ordinary text channel unless asked for
+            # otherwise. Calls are for a known set of people, so a channel
+            # readable by unauthenticated visitors can never be a voice one.
+            voice_video_enabled=bool(voice_video_enabled) and not is_web_public,
+            # Only ever meaningful on a voice channel; the caller is responsible
+            # for having pinned topics_policy to empty_topic_only in that case.
+            text_chat_disabled=text_chat_disabled
+            and bool(voice_video_enabled)
+            and not is_web_public,
             **group_setting_values,
         ),
     )
@@ -514,6 +522,8 @@ def create_streams_if_needed(
             message_retention_days=stream_dict.get("message_retention_days", None),
             default_push_notifications=stream_dict.get("default_push_notifications", False),
             topics_policy=stream_dict.get("topics_policy", None),
+            voice_video_enabled=stream_dict.get("voice_video_enabled", None),
+            text_chat_disabled=stream_dict.get("text_chat_disabled", None) or False,
             can_add_subscribers_group=stream_dict.get("can_add_subscribers_group", None),
             can_administer_channel_group=stream_dict.get("can_administer_channel_group", None),
             can_create_topic_group=stream_dict.get("can_create_topic_group", None),
@@ -1898,6 +1908,7 @@ def stream_to_dict(
         subscriber_count=stream.subscriber_count,
         topics_policy=StreamTopicsPolicyEnum(stream.topics_policy).name,
         voice_video_enabled=stream.voice_video_enabled,
+        text_chat_disabled=stream.text_chat_disabled,
     )
 
 

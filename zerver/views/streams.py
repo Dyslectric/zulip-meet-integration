@@ -313,6 +313,7 @@ def update_stream_backend(
     message_retention_days: Json[str] | Json[int] | None = None,
     new_name: str | None = None,
     stream_id: PathOnly[int],
+    text_chat_disabled: Json[bool] | None = None,
     topics_policy: TopicsPolicy = None,
     voice_video_enabled: Json[bool] | None = None,
 ) -> HttpResponse:
@@ -404,7 +405,38 @@ def update_stream_backend(
         if not user_profile.can_create_web_public_streams():
             raise JsonableError(_("Insufficient permission"))
 
+    # A voice channel never carries topics: it is either single-threaded or has
+    # no text chat at all. Becoming one therefore pins the channel
+    # single-threaded, and it stays that way for as long as it is one.
+    #
+    # Safe to key on voice_video_enabled only because it is opt-in: it defaults
+    # to False, so an ordinary channel is never dragged into single-threaded by
+    # someone saving its settings.
+    proposed_is_voice_channel = (
+        voice_video_enabled if voice_video_enabled is not None else stream.voice_video_enabled
+    ) and not proposed_is_web_public
+
     validated_topics_policy = validate_topics_policy(topics_policy, user_profile, stream)
+    if proposed_is_voice_channel:
+        if (
+            validated_topics_policy is not None
+            and validated_topics_policy != StreamTopicsPolicyEnum.empty_topic_only
+        ):
+            raise JsonableError(
+                _("Voice channels are single-threaded. Disable voice and video to use topics.")
+            )
+        # Deliberately bypasses validate_topics_policy's refusal to convert a
+        # channel that already has named topics: those topics keep their
+        # messages, they just stop being reachable as topics. Enabling voice is
+        # an explicit choice to make the channel single-threaded.
+        if stream.topics_policy != StreamTopicsPolicyEnum.empty_topic_only.value:
+            do_set_stream_property(
+                stream,
+                "topics_policy",
+                StreamTopicsPolicyEnum.empty_topic_only.value,
+                user_profile,
+            )
+        validated_topics_policy = None
     if validated_topics_policy is not None:
         do_set_stream_property(stream, "topics_policy", validated_topics_policy.value, user_profile)
 
@@ -459,7 +491,24 @@ def update_stream_backend(
     if voice_video_enabled is not None:
         # Metadata access (checked above) is the bar here, same as the other
         # channel settings: whoever can administer the channel decides.
-        do_set_stream_property(stream, "voice_video_enabled", voice_video_enabled, user_profile)
+        # The web-public contradiction is already refused above.
+        if proposed_is_voice_channel != stream.voice_video_enabled:
+            do_set_stream_property(
+                stream, "voice_video_enabled", proposed_is_voice_channel, user_profile
+            )
+
+    # Switching text chat off is only meaningful on a voice channel — it is the
+    # alternative to being single-threaded. Ceasing to be one restores text chat
+    # rather than leaving a channel nobody can say anything in.
+    if text_chat_disabled and not proposed_is_voice_channel:
+        raise JsonableError(_("Text chat can only be disabled on a voice channel."))
+    proposed_text_chat_disabled = (
+        text_chat_disabled if text_chat_disabled is not None else stream.text_chat_disabled
+    ) and proposed_is_voice_channel
+    if proposed_text_chat_disabled != stream.text_chat_disabled:
+        do_set_stream_property(
+            stream, "text_chat_disabled", proposed_text_chat_disabled, user_profile
+        )
 
     if is_archived is not None and not is_archived:
         do_unarchive_stream(stream, stream.name, acting_user=user_profile)
@@ -860,7 +909,9 @@ def add_subscriptions_backend(
     principals: Json[list[str] | list[int]] | None = None,
     send_new_subscription_messages: Json[bool] = True,
     streams_raw: Annotated[Json[list[AddSubscriptionData]], ApiParamConfig("subscriptions")],
+    text_chat_disabled: Json[bool] = False,
     topics_policy: Json[TopicsPolicy] = None,
+    voice_video_enabled: Json[bool] = False,
 ) -> HttpResponse:
     realm = user_profile.realm
     stream_dicts = []
@@ -899,6 +950,28 @@ def add_subscriptions_backend(
         validated_topics_policy = validate_topics_policy(topics_policy, user_profile)
         if validated_topics_policy is not None:
             stream_dict_copy["topics_policy"] = validated_topics_policy.value
+
+        # Same rules as editing a channel. Voice is opt-in, so an ordinary
+        # channel creation is untouched by any of this.
+        proposed_is_voice_channel = bool(voice_video_enabled) and not is_web_public
+        if voice_video_enabled and is_web_public:
+            raise JsonableError(
+                _("Web-public channels cannot be voice channels, because they cannot have calls.")
+            )
+        if text_chat_disabled and not proposed_is_voice_channel:
+            raise JsonableError(_("Text chat can only be disabled on a voice channel."))
+        if proposed_is_voice_channel:
+            if (
+                validated_topics_policy is not None
+                and validated_topics_policy != StreamTopicsPolicyEnum.empty_topic_only
+            ):
+                raise JsonableError(
+                    _("Voice channels are single-threaded. Disable voice and video to use topics.")
+                )
+            stream_dict_copy["topics_policy"] = StreamTopicsPolicyEnum.empty_topic_only.value
+        stream_dict_copy["voice_video_enabled"] = proposed_is_voice_channel
+        stream_dict_copy["text_chat_disabled"] = text_chat_disabled and proposed_is_voice_channel
+
         stream_dict_copy["folder"] = folder
         stream_dict_copy["default_push_notifications"] = default_push_notifications
 

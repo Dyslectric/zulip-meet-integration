@@ -176,6 +176,7 @@ def get_web_public_subs(
             subscriber_count=stream.subscriber_count,
             topics_policy=StreamTopicsPolicyEnum(topics_policy).name,
             voice_video_enabled=stream.voice_video_enabled,
+            text_chat_disabled=stream.text_chat_disabled,
             wildcard_mentions_notify=wildcard_mentions_notify,
         )
         subscribed.append(sub)
@@ -280,6 +281,7 @@ def build_stream_api_dict(
         subscriber_count=raw_stream_dict["subscriber_count"],
         topics_policy=raw_stream_dict["topics_policy"],
         voice_video_enabled=raw_stream_dict["voice_video_enabled"],
+        text_chat_disabled=raw_stream_dict["text_chat_disabled"],
     )
 
 
@@ -321,6 +323,7 @@ def build_stream_dict_for_sub(
     subscriber_count = stream_dict["subscriber_count"]
     topics_policy = stream_dict["topics_policy"]
     voice_video_enabled = stream_dict["voice_video_enabled"]
+    text_chat_disabled = stream_dict["text_chat_disabled"]
 
     # Handle Subscription.API_FIELDS.
     color = sub_dict["color"]
@@ -378,6 +381,7 @@ def build_stream_dict_for_sub(
         subscriber_count=subscriber_count,
         topics_policy=topics_policy,
         voice_video_enabled=voice_video_enabled,
+        text_chat_disabled=text_chat_disabled,
         wildcard_mentions_notify=wildcard_mentions_notify,
     )
 
@@ -406,6 +410,7 @@ def build_stream_dict_for_never_sub(
     subscriber_count = raw_stream_dict["subscriber_count"]
     topics_policy = raw_stream_dict["topics_policy"]
     voice_video_enabled = raw_stream_dict["voice_video_enabled"]
+    text_chat_disabled = raw_stream_dict["text_chat_disabled"]
 
     if recent_traffic is not None:
         stream_weekly_traffic = get_average_weekly_stream_traffic(
@@ -485,6 +490,7 @@ def build_stream_dict_for_never_sub(
         subscriber_count=subscriber_count,
         topics_policy=topics_policy,
         voice_video_enabled=voice_video_enabled,
+        text_chat_disabled=text_chat_disabled,
     )
 
 

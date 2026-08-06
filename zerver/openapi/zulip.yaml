@@ -19198,6 +19198,7 @@ paths:
                                 history_public_to_subscribers: {}
                                 topics_policy: {}
                                 voice_video_enabled: {}
+                                text_chat_disabled: {}
                                 first_message_id:
                                   nullable: true
                                 folder_id:
@@ -24268,6 +24269,7 @@ paths:
                                 history_public_to_subscribers: {}
                                 topics_policy: {}
                                 voice_video_enabled: {}
+                                text_chat_disabled: {}
                                 first_message_id:
                                   nullable: true
                                 folder_id:
@@ -24630,10 +24632,19 @@ paths:
                   $ref: "#/components/schemas/TopicsPolicy"
                 voice_video_enabled:
                   description: |
-                    Whether voice and video calls can be started in this channel.
+                    Whether this channel is a voice channel.
 
-                    When disabled, clients hide the call affordances for the channel
-                    and the server refuses to mint a call token for it.
+                    Calls exist only on voice channels. Marking a channel as one
+                    pins it single-threaded; unmarking it releases that and
+                    restores text chat.
+                  type: boolean
+                  example: false
+                text_chat_disabled:
+                  description: |
+                    Whether this channel carries no text conversation at all.
+
+                    Only accepted on a voice channel; the server refuses it
+                    otherwise, and clears it when a channel stops being one.
                   type: boolean
                   example: false
                 can_add_subscribers_group:
@@ -27581,6 +27592,7 @@ components:
             history_public_to_subscribers: {}
             topics_policy: {}
             voice_video_enabled: {}
+            text_chat_disabled: {}
             first_message_id:
               nullable: true
             folder_id:
@@ -27760,7 +27772,21 @@ components:
         voice_video_enabled:
           type: boolean
           description: |
-            Whether voice and video calls can be started in this channel.
+            Whether this channel is a voice channel.
+
+            Calls exist only on voice channels. A voice channel is always
+            single-threaded, and may additionally have text chat disabled
+            entirely via `text_chat_disabled`.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+        text_chat_disabled:
+          type: boolean
+          description: |
+            Whether this channel carries no text conversation at all: no
+            compose box, no topics, and nothing stored.
+
+            Only meaningful on a voice channel, where it is the alternative
+            to being single-threaded.
 
             **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
         first_message_id:
@@ -28932,7 +28958,21 @@ components:
         voice_video_enabled:
           type: boolean
           description: |
-            Whether voice and video calls can be started in this channel.
+            Whether this channel is a voice channel.
+
+            Calls exist only on voice channels. A voice channel is always
+            single-threaded, and may additionally have text chat disabled
+            entirely via `text_chat_disabled`.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+        text_chat_disabled:
+          type: boolean
+          description: |
+            Whether this channel carries no text conversation at all: no
+            compose box, no topics, and nothing stored.
+
+            Only meaningful on a voice channel, where it is the alternative
+            to being single-threaded.
 
             **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
         is_recently_active:
