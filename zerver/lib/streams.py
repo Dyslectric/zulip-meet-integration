@@ -433,6 +433,11 @@ def create_stream_if_needed(
             default_push_notifications=default_push_notifications,
             folder=folder,
             topics_policy=topics_policy,
+            # Calls are for a known set of people, so a channel readable by
+            # unauthenticated visitors does not get them. Channels allow calls by
+            # default, so a web-public one has to opt out here rather than never
+            # opting in.
+            voice_video_enabled=not is_web_public,
             **group_setting_values,
         ),
     )

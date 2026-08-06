@@ -366,6 +366,13 @@ def update_stream_backend(
     if proposed_is_private and proposed_is_default_stream:
         raise JsonableError(_("A default channel cannot be private."))
 
+    # A call is for a known set of people, so a channel that unauthenticated
+    # visitors can read does not get one. Asking for both in the same request is
+    # a contradiction and is refused; making a channel web-public when it happens
+    # to allow calls is not, and simply turns them off below.
+    if voice_video_enabled and proposed_is_web_public:
+        raise JsonableError(_("Web-public channels cannot have voice and video calls enabled."))
+
     # Ensure that a moderation request channel isn't set to public.
     if not proposed_is_private and user_profile.realm.moderation_request_channel == stream:
         raise JsonableError(_("Moderation request channel must be private."))

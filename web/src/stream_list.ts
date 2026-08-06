@@ -19,6 +19,7 @@ import * as compose_actions from "./compose_actions.ts";
 import type {Filter} from "./filter.ts";
 import * as hash_util from "./hash_util.ts";
 import {$t} from "./i18n.ts";
+import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 import * as keydown_util from "./keydown_util.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
 import {localstorage} from "./localstorage.ts";
@@ -855,7 +856,7 @@ function build_stream_sidebar_li(sub: StreamSubscription, for_modal = false): JQ
             sub.stream_id,
         ),
         is_empty_topic_only_channel: stream_data.is_empty_topic_only_channel(sub.stream_id),
-        voice_video_enabled: sub.voice_video_enabled,
+        voice_video_enabled: jitsi_sidebar.channel_allows_calls(sub),
         for_modal,
     };
     const $list_item = $(render_stream_sidebar_row(args));

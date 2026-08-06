@@ -168,7 +168,7 @@ function apply(): void {
         const sub = Number.isNaN(stream_id) ? undefined : sub_store.get(stream_id);
 
         // The speaker is a property of the channel, not of any call in it.
-        if (sub?.voice_video_enabled) {
+        if (sub !== undefined && channel_allows_calls(sub)) {
             ensure_voice_glyph($li, sub);
         } else {
             remove_voice_glyph($li);
@@ -237,6 +237,14 @@ function make_speaker_icon(): SVGSVGElement {
 function augment_row($li: JQuery, stream_id: number, occupancy: SidebarOccupancy): void {
     $li.addClass("jitsi-call-active");
     render_occupants($li, stream_id, occupancy);
+}
+
+// Whether a channel offers calls. A web-public channel never does, whatever its
+// own setting says: a call is for a known set of people, and anyone on the
+// internet can read such a channel. The server refuses to mint a token for one,
+// so this keeps the sidebar from advertising what it would refuse.
+export function channel_allows_calls(sub: StreamSubscription): boolean {
+    return sub.voice_video_enabled && !sub.is_web_public;
 }
 
 type PrivacyKind = "lock" | "globe" | "hashtag";

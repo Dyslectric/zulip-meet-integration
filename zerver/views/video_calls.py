@@ -905,9 +905,12 @@ def create_jitsi_call(
         stream, sub = access_stream_by_id(user, stream_id)
         if sub is None:
             raise JsonableError(_("Not subscribed to this channel"))
-        if not stream.voice_video_enabled:
+        if not stream.voice_video_enabled or stream.is_web_public:
             # Enforced here, not just hidden in the UI: without this a client
-            # could still ask for a token for a channel with calls turned off.
+            # could still ask for a token for a channel with calls turned off. A
+            # web-public channel never gets one whatever its setting says: a call
+            # is for a known set of people, and anyone on the internet can read
+            # such a channel.
             raise JsonableError(_("Voice and video calls are disabled in this channel"))
         scope = channel_scope(user.realm_id, stream.id)
         # Moderator maps to "may administer this channel", not to "whoever

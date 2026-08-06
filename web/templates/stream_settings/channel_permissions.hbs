@@ -79,12 +79,26 @@
     channel allows calls, and the creation form does not send it. }}
     {{#if is_stream_edit}}
         <div class="voice-video-enabled">
-            {{> ../settings/settings_checkbox
-              prefix=prefix
-              setting_name="voice_video_enabled"
-              is_checked=(lookup sub "voice_video_enabled")
-              label=(t "Allow voice and video calls")
-              }}
+            {{#if (lookup sub "is_web_public")}}
+                {{! Anyone on the internet can read a web-public channel, so it
+                    cannot have calls; offering the checkbox would only produce
+                    an error. }}
+                {{> ../settings/settings_checkbox
+                  prefix=prefix
+                  setting_name="voice_video_enabled"
+                  is_checked=false
+                  is_disabled=true
+                  label=(t "Allow voice and video calls")
+                  tooltip_message=(t "Web-public channels cannot have calls, because anyone on the internet can read them.")
+                  }}
+            {{else}}
+                {{> ../settings/settings_checkbox
+                  prefix=prefix
+                  setting_name="voice_video_enabled"
+                  is_checked=(lookup sub "voice_video_enabled")
+                  label=(t "Allow voice and video calls")
+                  }}
+            {{/if}}
         </div>
     {{/if}}
 

@@ -17,6 +17,7 @@ from zerver.lib.jitsi_token import (
     jitsi_jwt_is_configured,
     mint_jitsi_token,
 )
+from zerver.lib.streams import create_stream_if_needed
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import UserProfile
 from zerver.models.streams import get_stream
@@ -157,6 +158,64 @@ class JitsiCreateCallTest(ZulipTestCase):
         )
         self.assert_json_success(result)
         self.assertTrue(get_stream("Denmark", self.user.realm).voice_video_enabled)
+
+    def test_a_web_public_channel_cannot_have_calls(self) -> None:
+        """Anyone on the internet can read a web-public channel, so it must not be
+        able to reach the state of having calls -- by either route."""
+        stream_id = self.get_stream_id("Denmark")
+        self.login_user(self.example_user("iago"))
+
+        # Route one: enable calls on a channel that is already web-public.
+        stream = get_stream("Denmark", self.example_user("hamlet").realm)
+        stream.is_web_public = True
+        stream.voice_video_enabled = False
+        stream.save(update_fields=["is_web_public", "voice_video_enabled"])
+        result = self.client_patch(
+            f"/json/streams/{stream_id}", {"voice_video_enabled": orjson.dumps(True).decode()}
+        )
+        self.assert_json_error(
+            result, "Web-public channels cannot have voice and video calls enabled."
+        )
+
+        # Asking for both at once is a contradiction, and is refused.
+        stream.is_web_public = False
+        stream.voice_video_enabled = False
+        stream.save(update_fields=["is_web_public", "voice_video_enabled"])
+        result = self.client_patch(
+            f"/json/streams/{stream_id}",
+            {
+                "is_web_public": orjson.dumps(True).decode(),
+                "voice_video_enabled": orjson.dumps(True).decode(),
+            },
+        )
+        self.assert_json_error(
+            result, "Web-public channels cannot have voice and video calls enabled."
+        )
+
+    def test_a_web_public_channel_never_mints_a_call(self) -> None:
+        """Even carrying the stale combination -- web-public with calls still
+        switched on, which an older client or a privacy change can leave behind --
+        a web-public channel is refused a token. The rule is enforced where it
+        matters rather than by silently rewriting the channel's other settings."""
+        self.subscribe(self.user, "Denmark")
+        stream_id = self.get_stream_id("Denmark")
+        stream = get_stream("Denmark", self.user.realm)
+        stream.is_web_public = True
+        stream.voice_video_enabled = True
+        stream.save(update_fields=["is_web_public", "voice_video_enabled"])
+
+        with self.settings(**JWT_SETTINGS):
+            result = self.client_post("/json/calls/jitsi/create", {"stream_id": stream_id})
+        self.assert_json_error(result, "Voice and video calls are disabled in this channel")
+
+    def test_a_new_web_public_channel_starts_without_calls(self) -> None:
+        # Channels allow calls by default, so a web-public one has to be created
+        # opted out rather than never opted in.
+        realm = self.example_user("hamlet").realm
+        with_calls, _ = create_stream_if_needed(realm, "ordinary")
+        self.assertTrue(with_calls.voice_video_enabled)
+        web_public, _ = create_stream_if_needed(realm, "open to all", is_web_public=True)
+        self.assertFalse(web_public.voice_video_enabled)
 
     def test_subscribed_user_gets_a_scoped_token(self) -> None:
         self.subscribe(self.user, "Denmark")
