@@ -17,6 +17,7 @@ import * as z from "zod/mini";
 import * as channel from "./channel.ts";
 import * as people from "./people.ts";
 import * as sub_store from "./sub_store.ts";
+import type {StreamSubscription} from "./sub_store.ts";
 
 // A room in the bulk feed is a channel call (stream_id) or a DM/group call
 // (user_ids); exactly one of the two identifies it.
@@ -164,6 +165,15 @@ function apply(): void {
     for (const li of $("#stream_filters .narrow-filter")) {
         const $li = $(li);
         const stream_id = Number.parseInt($li.attr("data-stream-id") ?? "", 10);
+        const sub = Number.isNaN(stream_id) ? undefined : sub_store.get(stream_id);
+
+        // The speaker is a property of the channel, not of any call in it.
+        if (sub?.voice_video_enabled) {
+            ensure_voice_glyph($li, sub);
+        } else {
+            remove_voice_glyph($li);
+        }
+
         const occupancy = Number.isNaN(stream_id) ? undefined : occupancy_by_stream.get(stream_id);
         if (occupancy === undefined) {
             clear_row($li);
@@ -225,43 +235,81 @@ function make_speaker_icon(): SVGSVGElement {
 }
 
 function augment_row($li: JQuery, stream_id: number, occupancy: SidebarOccupancy): void {
-    const is_private = sub_store.get(stream_id)?.invite_only ?? false;
-    $li.addClass("jitsi-call-active").toggleClass("jitsi-call-private", is_private);
-    ensure_icons($li, is_private);
+    $li.addClass("jitsi-call-active");
     render_occupants($li, stream_id, occupancy);
 }
 
-// A small padlock, drawn rather than taken from the icon font: the font's
-// .zulip-icon-lock is sized by a more specific sidebar rule, which made the
-// badge as large as the speaker it is supposed to sit in the corner of.
-function make_lock_badge(): SVGSVGElement {
+type PrivacyKind = "lock" | "globe" | "hashtag";
+
+function privacy_kind(sub: StreamSubscription): PrivacyKind {
+    if (sub.is_web_public) {
+        return "globe";
+    }
+    return sub.invite_only ? "lock" : "hashtag";
+}
+
+// The channel's privacy glyph, redrawn small enough to sit in the corner of the
+// speaker. Drawn rather than taken from the icon font because the font's glyphs
+// are sized by a more specific sidebar rule, which made the badge as large as
+// the speaker it is supposed to be a corner of.
+function make_privacy_badge(kind: PrivacyKind): SVGSVGElement {
     const svg = document.createElementNS(SVG_NS, "svg");
-    svg.classList.add("jitsi-call-lock-badge");
+    svg.classList.add("jitsi-privacy-badge");
+    svg.dataset["privacy"] = kind;
     svg.setAttribute("viewBox", "0 0 16 16");
     svg.setAttribute("aria-hidden", "true");
-    const shackle = document.createElementNS(SVG_NS, "path");
-    shackle.setAttribute("d", "M5 7.5V5.4a3 3 0 0 1 6 0v2.1");
-    shackle.setAttribute("fill", "none");
-    shackle.setAttribute("stroke", "currentColor");
-    shackle.setAttribute("stroke-width", "1.8");
-    svg.append(shackle);
-    const body = document.createElementNS(SVG_NS, "rect");
-    body.setAttribute("x", "3");
-    body.setAttribute("y", "7");
-    body.setAttribute("width", "10");
-    body.setAttribute("height", "7");
-    body.setAttribute("rx", "1.4");
-    body.setAttribute("fill", "currentColor");
-    svg.append(body);
+
+    const stroke = (d: string, width = "1.8"): void => {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", width);
+        path.setAttribute("stroke-linecap", "round");
+        svg.append(path);
+    };
+
+    if (kind === "lock") {
+        stroke("M5 7.5V5.4a3 3 0 0 1 6 0v2.1");
+        const body = document.createElementNS(SVG_NS, "rect");
+        body.setAttribute("x", "3");
+        body.setAttribute("y", "7");
+        body.setAttribute("width", "10");
+        body.setAttribute("height", "7");
+        body.setAttribute("rx", "1.4");
+        body.setAttribute("fill", "currentColor");
+        svg.append(body);
+    } else if (kind === "globe") {
+        const outline = document.createElementNS(SVG_NS, "circle");
+        outline.setAttribute("cx", "8");
+        outline.setAttribute("cy", "8");
+        outline.setAttribute("r", "6");
+        outline.setAttribute("fill", "none");
+        outline.setAttribute("stroke", "currentColor");
+        outline.setAttribute("stroke-width", "1.8");
+        svg.append(outline);
+        stroke("M2 8h12");
+        stroke("M8 2c2.6 2.9 2.6 9.1 0 12");
+    } else {
+        stroke("M6.3 2.5 4.9 13.5", "2");
+        stroke("M11.4 2.5 10 13.5", "2");
+        stroke("M3 6.2h10", "2");
+        stroke("M2.6 10.2h10", "2");
+    }
     return svg;
 }
 
-function ensure_icons($li: JQuery, is_private: boolean): void {
+// A voice-enabled channel wears a speaker in place of its privacy glyph, with
+// that glyph shrunk into the corner so the row still says whether the channel is
+// public, web-public or private. Independent of whether a call is live: the
+// speaker advertises that the channel supports calls at all.
+function ensure_voice_glyph($li: JQuery, sub: StreamSubscription): void {
     const privacy = $li.find(".stream-privacy").first().get(0);
     if (privacy === undefined) {
         return;
     }
-    // The speaker and its lock live in a wrapper sized to the glyph, so the
+    $li.addClass("jitsi-voice-channel");
+    // The speaker and its badge live in a wrapper sized to the glyph, so the
     // badge anchors to the speaker's corner rather than to the whole cell.
     let glyph = privacy.querySelector(".jitsi-call-glyph");
     if (glyph === null) {
@@ -270,12 +318,22 @@ function ensure_icons($li: JQuery, is_private: boolean): void {
         glyph.append(make_speaker_icon());
         privacy.append(glyph);
     }
-    const lock = glyph.querySelector(".jitsi-call-lock-badge");
-    if (is_private && lock === null) {
-        glyph.append(make_lock_badge());
-    } else if (!is_private && lock !== null) {
-        lock.remove();
+    const kind = privacy_kind(sub);
+    const badge = glyph.querySelector(".jitsi-privacy-badge");
+    if (badge === null) {
+        glyph.append(make_privacy_badge(kind));
+    } else if (badge instanceof SVGElement && badge.dataset["privacy"] !== kind) {
+        // The channel's privacy changed under us.
+        badge.replaceWith(make_privacy_badge(kind));
     }
+}
+
+function remove_voice_glyph($li: JQuery): void {
+    if (!$li.hasClass("jitsi-voice-channel")) {
+        return;
+    }
+    $li.removeClass("jitsi-voice-channel");
+    $li.find(".stream-privacy .jitsi-call-glyph").remove();
 }
 
 function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccupancy): void {
@@ -332,12 +390,13 @@ function render_occupants($li: JQuery, stream_id: number, occupancy: SidebarOccu
     }
 }
 
+// Strips what a live call adds. Deliberately leaves the speaker glyph alone:
+// that belongs to the channel, and ensure_voice_glyph owns it.
 function clear_row($li: JQuery): void {
     if (!$li.hasClass("jitsi-call-active")) {
         return;
     }
-    $li.removeClass("jitsi-call-active jitsi-call-private");
-    $li.find(".stream-privacy .jitsi-call-glyph").remove();
+    $li.removeClass("jitsi-call-active");
     $li.children(".jitsi-sidebar-occupants").remove();
 }
 

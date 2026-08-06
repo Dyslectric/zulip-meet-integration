@@ -1,6 +1,7 @@
-/* Call-aware left sidebar (Zulip Meet). Driven by web/src/jitsi_sidebar.ts, which
-   adds .jitsi-call-active (and .jitsi-call-private) to a channel row that has a
-   live call and injects the speaker icon, lock badge, and occupant avatars. */
+/* Call-aware left sidebar (Zulip Meet). Driven by web/src/jitsi_sidebar.ts:
+   .jitsi-voice-channel marks a channel that allows calls, whose privacy glyph is
+   replaced by a speaker wearing that glyph as a corner badge; .jitsi-call-active
+   marks one with a live call, which additionally lists its occupants. */
 
 /* Call button on a sidebar row: hidden until the row is hovered (or focused,
    for keyboard users), matching how the row's other controls behave. Channel
@@ -25,6 +26,17 @@
     background-color: var(--color-background-tab-hover, hsl(0deg 0% 0% / 8%));
 }
 
+/* A DM row's marker area is baseline-aligned and shorter than the row's text box
+   (see .dm-markers-and-unreads in left_sidebar.css), so centring our icons within
+   it leaves them sitting below the conversation name. Lift them onto the name's
+   centre line, which is where a channel row's call button already sits. Measured:
+   2.6px at a 16px root, hence 0.16em. */
+.dm-markers-and-unreads .jitsi-sidebar-call-button,
+.dm-markers-and-unreads .jitsi-dm-speaker-slot {
+    position: relative;
+    top: -0.16em;
+}
+
 /* Speaker beside a DM/group DM label while a call is live there. Filled in by
    jitsi_sidebar.ts; collapsed when empty so it takes no space. */
 .jitsi-dm-speaker-slot:empty {
@@ -39,14 +51,16 @@
     color: var(--color-text-sidebar-action-heading);
 }
 
-/* Replace the channel's normal privacy glyph with the injected speaker while a
-   call is live. Our own glyphs are SVG, so hiding the icon-font glyph is safe. */
-.narrow-filter.jitsi-call-active .stream-privacy .zulip-icon {
+/* Replace the channel's normal privacy glyph with the injected speaker whenever
+   the channel allows calls. Our own glyphs are SVG, so hiding the icon-font
+   glyph is safe. */
+.narrow-filter.jitsi-voice-channel .stream-privacy .zulip-icon {
     display: none;
 }
 
-/* The positioning context for the lock badge: exactly the speaker's box, so the
-   badge tucks into the speaker's corner and not the corner of the wider cell. */
+/* The positioning context for the privacy badge: exactly the speaker's box, so
+   the badge tucks into the speaker's corner and not the corner of the wider
+   cell. */
 .jitsi-call-glyph {
     position: relative;
     display: inline-flex;
@@ -64,10 +78,11 @@
     vertical-align: middle;
 }
 
-/* Small lock in the bottom-right corner of the speaker for a private channel
-   with a live call. Sized in em (an SVG, not the icon font) so no sidebar rule
-   can inflate it back over the speaker. */
-.jitsi-call-lock-badge {
+/* The channel's privacy glyph, in the bottom-right corner of the speaker: a lock
+   for a private channel, a globe for a web-public one, a hashtag otherwise.
+   Sized in em (an SVG, not the icon font) so no sidebar rule can inflate it back
+   over the speaker. */
+.jitsi-privacy-badge {
     position: absolute;
     right: -0.2em;
     bottom: -0.15em;
