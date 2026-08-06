@@ -53,10 +53,11 @@
     color: var(--color-text-sidebar-action-heading);
 }
 
-/* Replace the channel's normal privacy glyph with the injected speaker whenever
-   the channel allows calls. Our own glyphs are SVG, so hiding the icon-font
-   glyph is safe. */
-.narrow-filter.jitsi-voice-channel .stream-privacy .zulip-icon {
+/* Replace the channel's normal privacy glyph with our injected pair (a folder,
+   hash, globe or speaker, plus a corner badge) on every channel row. Scoped to
+   the direct child so it hides only the template's glyph: the web-public globe
+   is that same icon-font glyph reused inside our wrapper, and must survive. */
+.narrow-filter.jitsi-custom-glyph .stream-privacy > .zulip-icon {
     display: none;
 }
 
@@ -78,6 +79,54 @@
     width: 1em;
     height: 1em;
     vertical-align: middle;
+}
+
+/* The speaker reads smaller than the font glyphs it stands in for, so a channel
+   that allows calls gets a slightly larger one. The wrapper grows with it rather
+   than the speaker overflowing, because the badge is anchored to the wrapper's
+   corner and has to stay on the speaker's. Scoped to channel rows and to the
+   main glyph: DM speakers and the corner badges keep their own sizes. */
+.narrow-filter .jitsi-call-glyph:has(> [data-glyph="speaker"]) {
+    width: 1.3em;
+    height: 1.3em;
+}
+
+/* The folder is drawn too, and reads small against the font glyphs beside it. */
+.narrow-filter .jitsi-call-glyph:has(> [data-glyph="folder"]) {
+    width: 1.15em;
+    height: 1.15em;
+}
+
+.narrow-filter .jitsi-call-glyph > [data-glyph="speaker"],
+.narrow-filter .jitsi-call-glyph > [data-glyph="folder"] {
+    width: 100%;
+    height: 100%;
+}
+
+/* The globe is the icon font, so it grows by font-size rather than by box. The
+   wrapper shrink-wraps it instead of being given a matching size: an icon font's
+   advance width is not the em square, so a fixed box would leave the folder
+   badge floating off the globe's corner on a web-public topical channel. */
+.narrow-filter .jitsi-call-glyph:has(> [data-glyph="globe"]) {
+    width: auto;
+    height: auto;
+    align-items: center;
+}
+
+/* Zulip shrinks the sidebar globe to 0.8571em from a four-class selector, which
+   outranks anything shorter; this has to out-specify it to grow the glyph. */
+.narrow-filter .subscription_block .stream-privacy .jitsi-call-glyph > .zulip-icon-globe {
+    font-size: 1em;
+    line-height: 1;
+}
+
+/* The badge is sized off the font rather than off the wrapper, so it did not
+   follow the glyphs when those grew. One size for every channel row: a lock has
+   to read the same whether it sits on a hash, a folder or a speaker, and a badge
+   that changes size with its host looks like it means something different. */
+.narrow-filter .jitsi-call-glyph .jitsi-privacy-badge {
+    width: 0.78em;
+    height: 0.78em;
 }
 
 /* The channel's privacy glyph, in the bottom-right corner of the speaker: a lock

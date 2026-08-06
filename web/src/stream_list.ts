@@ -525,6 +525,9 @@ export function build_stream_list(force_rerender: boolean): void {
     set_sections_states();
     // Show inactive channels when user starts typing.
     $("#streams_list").toggleClass("is_searching", ui_util.get_left_sidebar_search_term() !== "");
+    // The rows we just built carry the template's plain privacy glyph; swap in
+    // the folder/hash/globe/speaker pair now rather than at the next poll.
+    jitsi_sidebar.apply_channel_rows();
 }
 
 export function mention_counts_by_section(): Map<
@@ -840,7 +843,11 @@ export function set_in_home_view(stream_id: number, in_home: boolean): void {
 function build_stream_sidebar_li(sub: StreamSubscription, for_modal = false): JQuery {
     const name = sub.name;
     const is_muted = stream_data.is_muted(sub.stream_id);
-    const can_post_messages = stream_data.can_post_messages_in_stream(sub);
+    // A channel with text chat switched off has nothing to compose into and no
+    // topics to search, so it offers only the call button and the menu.
+    const text_chat_disabled = jitsi_sidebar.channel_has_no_text_chat(sub);
+    const can_post_messages =
+        !text_chat_disabled && stream_data.can_post_messages_in_stream(sub);
     const url = hash_util.channel_url_by_user_setting(sub.stream_id);
     const args = {
         name,
@@ -857,6 +864,7 @@ function build_stream_sidebar_li(sub: StreamSubscription, for_modal = false): JQ
         ),
         is_empty_topic_only_channel: stream_data.is_empty_topic_only_channel(sub.stream_id),
         voice_video_enabled: jitsi_sidebar.channel_allows_calls(sub),
+        text_chat_disabled,
         for_modal,
     };
     const $list_item = $(render_stream_sidebar_row(args));
@@ -1571,6 +1579,16 @@ export function set_event_handlers({
             return;
         }
         const stream_id = stream_id_for_elt($(e.target).parents("li.narrow-filter"));
+
+        // A channel with text chat switched off has nothing to narrow to. The
+        // row carries no href for the same reason, but this handler does the
+        // navigating rather than the browser, so it has to bail out too.
+        const sub = sub_store.get(stream_id);
+        if (sub !== undefined && jitsi_sidebar.channel_has_no_text_chat(sub)) {
+            e.preventDefault();
+            return;
+        }
+
         on_sidebar_channel_click(stream_id, e, show_channel_feed);
     });
 

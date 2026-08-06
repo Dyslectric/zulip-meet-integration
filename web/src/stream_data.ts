@@ -1302,6 +1302,35 @@ export function is_empty_topic_only_channel(stream_id: number | undefined): bool
     );
 }
 
+// Whether a channel offers calls. A web-public channel never does, whatever its
+// own setting says: a call is for a known set of people, and anyone on the
+// internet can read such a channel. The server refuses to mint a token for one,
+// so this keeps the client from advertising what it would refuse.
+// Whether the channel is a voice channel. Calls exist only on voice channels,
+// so this is both "is a voice channel" and "may have calls" — there is no
+// channel that allows calls without being one. Web-public channels are excluded
+// whatever their setting says: anyone on the internet can read one, so the
+// server refuses to mint a call token for it.
+export function channel_is_voice_channel(sub: StreamSubscription): boolean {
+    return sub.voice_video_enabled && !sub.is_web_public;
+}
+
+// Kept as the name the call-affordance code reads, since "can I start a call
+// here" is the question it is asking.
+export const channel_allows_calls = channel_is_voice_channel;
+
+// A voice channel that carries no text at all: no compose box, no topics, and
+// nothing stored. There is nothing to narrow to in one, so every route into it
+// has to be closed off, not just the sidebar row. Gated on
+// channel_is_voice_channel because text_chat_disabled is only meaningful on one,
+// and a stale value must not strand a channel nobody can open.
+export function channel_has_no_text_chat(sub: StreamSubscription): boolean {
+    // Coerced rather than returned raw: this value is passed straight into a
+    // template context, and an undefined from a sub that predates the field
+    // would read differently there than a false.
+    return Boolean(sub.text_chat_disabled) && channel_is_voice_channel(sub);
+}
+
 /*
   This module provides a common helper for finding the notification
   stream, but we don't own the data.  The `realm` structure

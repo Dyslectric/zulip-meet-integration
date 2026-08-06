@@ -16,6 +16,7 @@ import * as z from "zod/mini";
 
 import * as channel from "./channel.ts";
 import * as people from "./people.ts";
+import * as stream_data from "./stream_data.ts";
 import * as sub_store from "./sub_store.ts";
 import type {StreamSubscription} from "./sub_store.ts";
 
@@ -161,17 +162,24 @@ export function apply_pushed_occupancy(event: unknown): void {
 
 // Reconcile every stream row against the current occupancy: augment the ones with
 // a live call, strip the augmentation from the ones without. Idempotent.
-function apply(): void {
+//
+// Exported (as apply_channel_rows) for the same reason as apply_dm_rows below:
+// the glyphs live in DOM the stream list owns, so a rebuild drops them. Without
+// that a channel keeps the template's plain glyph until the next occupancy poll
+// — most visible right after creating one, where the icon would be wrong for up
+// to fifteen seconds. Deliberately does NOT touch the DM rows: the stream list
+// has not rebuilt those, and pm_list calls apply_dm_rows itself when it has.
+export function apply_channel_rows(): void {
     for (const li of $("#stream_filters .narrow-filter")) {
         const $li = $(li);
         const stream_id = Number.parseInt($li.attr("data-stream-id") ?? "", 10);
         const sub = Number.isNaN(stream_id) ? undefined : sub_store.get(stream_id);
 
-        // The speaker is a property of the channel, not of any call in it.
-        if (sub !== undefined && channel_allows_calls(sub)) {
-            ensure_voice_glyph($li, sub);
+        // The glyph is a property of the channel, not of any call in it.
+        if (sub === undefined) {
+            remove_channel_glyph($li);
         } else {
-            remove_voice_glyph($li);
+            ensure_channel_glyph($li, sub);
         }
 
         const occupancy = Number.isNaN(stream_id) ? undefined : occupancy_by_stream.get(stream_id);
@@ -181,6 +189,10 @@ function apply(): void {
             augment_row($li, stream_id, occupancy);
         }
     }
+}
+
+function apply(): void {
+    apply_channel_rows();
     apply_dm_rows();
 }
 
@@ -243,104 +255,195 @@ function augment_row($li: JQuery, stream_id: number, occupancy: SidebarOccupancy
 // own setting says: a call is for a known set of people, and anyone on the
 // internet can read such a channel. The server refuses to mint a token for one,
 // so this keeps the sidebar from advertising what it would refuse.
-export function channel_allows_calls(sub: StreamSubscription): boolean {
-    return sub.voice_video_enabled && !sub.is_web_public;
-}
+// Both predicates live in stream_data, which is where channel capabilities
+// belong: the narrow guard and the search filter need them too, and neither
+// should have to depend on a sidebar module. Re-exported here because the call
+// sites in this file and in stream_list already read from it.
+export const channel_allows_calls = stream_data.channel_allows_calls;
+export const channel_is_voice_channel = stream_data.channel_is_voice_channel;
+export const channel_has_no_text_chat = stream_data.channel_has_no_text_chat;
+// Re-exported rather than redefined: see stream_data for why these live there.
 
-type PrivacyKind = "lock" | "globe" | "hashtag";
+// What a sidebar row says about a channel is two glyphs, not one: a main glyph
+// for what kind of conversation the channel is, and a corner badge for the
+// qualifier. The main glyph answers "how do I talk here" — a speaker for a voice
+// channel, a folder for one with topics, a hash for a single-threaded one. The
+// badge answers "who can see it", except on a public voice channel that still
+// carries text, where privacy has nothing to say and the hash marks the text.
+type GlyphKind = "speaker" | "globe" | "folder" | "hashtag";
+type BadgeKind = "lock" | "folder" | "hashtag";
 
-function privacy_kind(sub: StreamSubscription): PrivacyKind {
+// The main glyph is whatever is loudest about the channel, in that order: a
+// voice channel is a speaker, a web-public one is a globe, and an ordinary one
+// is a folder or a hash depending on whether it carries topics.
+function glyph_kind(sub: StreamSubscription): GlyphKind {
+    if (channel_is_voice_channel(sub)) {
+        return "speaker";
+    }
     if (sub.is_web_public) {
         return "globe";
     }
-    return sub.invite_only ? "lock" : "hashtag";
+    return stream_data.is_empty_topic_only_channel(sub.stream_id) ? "hashtag" : "folder";
 }
 
-// The channel's privacy glyph, redrawn small enough to sit in the corner of the
-// speaker. Drawn rather than taken from the icon font because the font's glyphs
-// are sized by a more specific sidebar rule, which made the badge as large as
-// the speaker it is supposed to be a corner of.
-function make_privacy_badge(kind: PrivacyKind): SVGSVGElement {
+// The badge carries whatever the main glyph could not. A web-public channel has
+// already spent its glyph on the globe, so the badge is where its topics show
+// up; everywhere else privacy wins the slot, which is why a private voice
+// channel with single-threaded text wears a lock rather than a hash and so
+// reads the same as a private voice channel with no text at all.
+function badge_kind(sub: StreamSubscription): BadgeKind | undefined {
+    if (sub.is_web_public) {
+        return stream_data.is_empty_topic_only_channel(sub.stream_id) ? undefined : "folder";
+    }
+    if (sub.invite_only) {
+        return "lock";
+    }
+    if (channel_is_voice_channel(sub) && !sub.text_chat_disabled) {
+        return "hashtag";
+    }
+    return undefined;
+}
+
+// The shapes, drawn rather than taken from the icon font: the font's glyphs are
+// sized by a more specific sidebar rule, which made a badge as large as the
+// glyph it is supposed to be a corner of. Each shape is drawn once and used at
+// both sizes — a folder is the main glyph on a topical channel and the badge on
+// a web-public one — with CSS doing the scaling.
+function stroke_into(svg: SVGSVGElement, d: string, width: string): void {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", width);
+    path.setAttribute("stroke-linecap", "round");
+    svg.append(path);
+}
+
+function draw_lock(svg: SVGSVGElement): void {
+    stroke_into(svg, "M5 7.5V5.4a3 3 0 0 1 6 0v2.1", "1.8");
+    const body = document.createElementNS(SVG_NS, "rect");
+    body.setAttribute("x", "3");
+    body.setAttribute("y", "7");
+    body.setAttribute("width", "10");
+    body.setAttribute("height", "7");
+    body.setAttribute("rx", "1.4");
+    body.setAttribute("fill", "currentColor");
+    svg.append(body);
+}
+
+// A folder: the channel keeps its conversation in named topics.
+function draw_folder(svg: SVGSVGElement): void {
+    const body = document.createElementNS(SVG_NS, "path");
+    body.setAttribute(
+        "d",
+        "M1.5 4.2c0-.7.6-1.2 1.2-1.2h3.1c.4 0 .8.2 1 .5l.9 1.2h5.6c.7 0 1.2.6 1.2 1.2v6.1c0 .7-.6 1.2-1.2 1.2H2.7c-.7 0-1.2-.6-1.2-1.2z",
+    );
+    body.setAttribute("fill", "currentColor");
+    svg.append(body);
+}
+
+// A hash: a single-threaded channel, all of its messages in one conversation.
+function draw_hashtag(svg: SVGSVGElement): void {
+    for (const d of ["M6.3 2.5 4.9 13.5", "M11.4 2.5 10 13.5", "M3 6.2h10", "M2.6 10.2h10"]) {
+        stroke_into(svg, d, "2");
+    }
+}
+
+function blank_svg(class_name: string): SVGSVGElement {
     const svg = document.createElementNS(SVG_NS, "svg");
-    svg.classList.add("jitsi-privacy-badge");
-    svg.dataset["privacy"] = kind;
+    svg.classList.add(class_name);
     svg.setAttribute("viewBox", "0 0 16 16");
     svg.setAttribute("aria-hidden", "true");
+    return svg;
+}
 
-    const stroke = (d: string, width = "1.8"): void => {
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute("d", d);
-        path.setAttribute("fill", "none");
-        path.setAttribute("stroke", "currentColor");
-        path.setAttribute("stroke-width", width);
-        path.setAttribute("stroke-linecap", "round");
-        svg.append(path);
-    };
-
+function make_privacy_badge(kind: BadgeKind): SVGSVGElement {
+    const svg = blank_svg("jitsi-privacy-badge");
+    svg.dataset["privacy"] = kind;
     if (kind === "lock") {
-        stroke("M5 7.5V5.4a3 3 0 0 1 6 0v2.1");
-        const body = document.createElementNS(SVG_NS, "rect");
-        body.setAttribute("x", "3");
-        body.setAttribute("y", "7");
-        body.setAttribute("width", "10");
-        body.setAttribute("height", "7");
-        body.setAttribute("rx", "1.4");
-        body.setAttribute("fill", "currentColor");
-        svg.append(body);
-    } else if (kind === "globe") {
-        const outline = document.createElementNS(SVG_NS, "circle");
-        outline.setAttribute("cx", "8");
-        outline.setAttribute("cy", "8");
-        outline.setAttribute("r", "6");
-        outline.setAttribute("fill", "none");
-        outline.setAttribute("stroke", "currentColor");
-        outline.setAttribute("stroke-width", "1.8");
-        svg.append(outline);
-        stroke("M2 8h12");
-        stroke("M8 2c2.6 2.9 2.6 9.1 0 12");
+        draw_lock(svg);
+    } else if (kind === "folder") {
+        draw_folder(svg);
     } else {
-        stroke("M6.3 2.5 4.9 13.5", "2");
-        stroke("M11.4 2.5 10 13.5", "2");
-        stroke("M3 6.2h10", "2");
-        stroke("M2.6 10.2h10", "2");
+        draw_hashtag(svg);
     }
     return svg;
 }
 
-// A voice-enabled channel wears a speaker in place of its privacy glyph, with
-// that glyph shrunk into the corner so the row still says whether the channel is
-// public, web-public or private. Independent of whether a call is live: the
-// speaker advertises that the channel supports calls at all.
-function ensure_voice_glyph($li: JQuery, sub: StreamSubscription): void {
+function make_glyph_icon(kind: GlyphKind): Element {
+    if (kind === "speaker") {
+        return make_speaker_icon();
+    }
+    // The globe and the hash are Zulip's own icon-font glyphs rather than ones
+    // of ours: they are the established marks for web-public and for a channel,
+    // and nicer than anything worth redrawing. Nesting them inside our wrapper
+    // keeps them clear of the rule that hides the template's glyph, which only
+    // reaches direct children. Our drawn hash survives only as the corner badge
+    // on a voice channel, where the font glyph is sized by a more specific rule
+    // than we can usefully fight.
+    if (kind === "globe" || kind === "hashtag") {
+        const i = document.createElement("i");
+        i.className = kind === "globe" ? "zulip-icon zulip-icon-globe" : "zulip-icon zulip-icon-hashtag";
+        i.setAttribute("aria-hidden", "true");
+        return i;
+    }
+    const svg = blank_svg("jitsi-call-speaker-icon");
+    draw_folder(svg);
+    return svg;
+}
+
+// Replaces the template's privacy icon with the pair described above. Runs for
+// every channel row, not just voice ones, so the whole sidebar speaks one
+// vocabulary. Independent of whether a call is live: the speaker advertises that
+// the channel supports calls at all.
+function ensure_channel_glyph($li: JQuery, sub: StreamSubscription): void {
     const privacy = $li.find(".stream-privacy").first().get(0);
     if (privacy === undefined) {
         return;
     }
-    $li.addClass("jitsi-voice-channel");
-    // The speaker and its badge live in a wrapper sized to the glyph, so the
-    // badge anchors to the speaker's corner rather than to the whole cell.
+    $li.addClass("jitsi-custom-glyph");
+    $li.toggleClass("jitsi-voice-channel", channel_is_voice_channel(sub));
+
+    // The glyph and its badge live in a wrapper sized to the glyph, so the badge
+    // anchors to the glyph's corner rather than to the whole cell.
     let glyph = privacy.querySelector(".jitsi-call-glyph");
     if (glyph === null) {
         glyph = document.createElement("span");
         glyph.className = "jitsi-call-glyph";
-        glyph.append(make_speaker_icon());
         privacy.append(glyph);
     }
-    const kind = privacy_kind(sub);
+
+    const kind = glyph_kind(sub);
+    const icon = glyph.querySelector<HTMLElement | SVGElement>("[data-glyph]");
+    if (icon === null || icon.dataset["glyph"] !== kind) {
+        const next = make_glyph_icon(kind);
+        if (next instanceof HTMLElement || next instanceof SVGElement) {
+            next.dataset["glyph"] = kind;
+        }
+        if (icon === null) {
+            glyph.prepend(next);
+        } else {
+            icon.replaceWith(next);
+        }
+    }
+
+    const badge_wanted = badge_kind(sub);
     const badge = glyph.querySelector(".jitsi-privacy-badge");
-    if (badge === null) {
-        glyph.append(make_privacy_badge(kind));
-    } else if (badge instanceof SVGElement && badge.dataset["privacy"] !== kind) {
-        // The channel's privacy changed under us.
-        badge.replaceWith(make_privacy_badge(kind));
+    if (badge_wanted === undefined) {
+        badge?.remove();
+    } else if (badge === null) {
+        glyph.append(make_privacy_badge(badge_wanted));
+    } else if (badge instanceof SVGElement && badge.dataset["privacy"] !== badge_wanted) {
+        // The channel's privacy or text mode changed under us.
+        badge.replaceWith(make_privacy_badge(badge_wanted));
     }
 }
 
-function remove_voice_glyph($li: JQuery): void {
-    if (!$li.hasClass("jitsi-voice-channel")) {
+function remove_channel_glyph($li: JQuery): void {
+    if (!$li.hasClass("jitsi-custom-glyph")) {
         return;
     }
-    $li.removeClass("jitsi-voice-channel");
+    $li.removeClass("jitsi-custom-glyph jitsi-voice-channel");
     $li.find(".stream-privacy .jitsi-call-glyph").remove();
 }
 

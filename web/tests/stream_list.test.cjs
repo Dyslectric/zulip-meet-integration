@@ -586,6 +586,7 @@ test_ui("rename_stream", ({mock_template, override, override_rewire}) => {
             is_empty_topic_only_channel: false,
             cannot_create_topics_in_channel: false,
             voice_video_enabled: true,
+            text_chat_disabled: false,
         });
         return "<li-stub>";
     });

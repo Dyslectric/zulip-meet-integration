@@ -1,7 +1,9 @@
 {{! Stream sidebar rows }}
 <li {{#if for_modal}}id="more-topics-modal" {{/if}}class="narrow-filter{{#if is_muted}} out_of_home_view{{/if}}" data-stream-id="{{id}}">
     <div class="bottom_left_row channel-header">
-        <a href="{{url}}" class="subscription_block selectable_sidebar_block" draggable="false">
+        {{! A channel with no text chat has nothing to narrow to, so its row is
+        not a link: the call button and the menu are the only live controls. }}
+        <a {{#unless text_chat_disabled}}href="{{url}}" {{/unless}}class="subscription_block selectable_sidebar_block{{#if text_chat_disabled}} channel-text-chat-disabled{{/if}}" draggable="false">
 
             <span class="stream-privacy-original-color-{{id}} stream-privacy filter-icon" style="color: {{color}}">
                 {{> stream_privacy . }}
@@ -15,9 +17,11 @@
                     <i class="zulip-icon zulip-icon-voice-call" aria-hidden="true"></i>
                 </div>
                 {{/if}}
+                {{#unless text_chat_disabled}}
                 <div class="channel-search-topics-button" tabindex="0" data-tippy-content="{{t 'Search topics' }}" data-stream-id="{{id}}">
                     <i class="zulip-icon zulip-icon-search" aria-hidden="true"></i>
                 </div>
+                {{/unless}}
                 {{#if can_post_messages}}
                 <div class="channel-new-topic-button hidden-for-spectators auto-hide-left-sidebar-overlay" tabindex="0"  data-tippy-content="{{#if (or is_empty_topic_only_channel cannot_create_topics_in_channel)}}{{t 'New message'}}{{else}}{{t 'Start a new topic'}}{{/if}}" data-stream-id="{{id}}">
                     <i class="channel-new-topic-icon zulip-icon zulip-icon-square-plus" aria-hidden="true"></i>
