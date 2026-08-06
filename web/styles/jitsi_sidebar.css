@@ -26,15 +26,17 @@
     background-color: var(--color-background-tab-hover, hsl(0deg 0% 0% / 8%));
 }
 
-/* A DM row's marker area is baseline-aligned and shorter than the row's text box
-   (see .dm-markers-and-unreads in left_sidebar.css), so centring our icons within
-   it leaves them sitting below the conversation name. Lift them onto the name's
-   centre line, which is where a channel row's call button already sits. Measured:
-   2.6px at a 16px root, hence 0.16em. */
+/* Sit where Zulip already puts an icon in a DM row.
+   The marker area is baseline-aligned and shorter than the row's text box (see
+   .dm-markers-and-unreads in left_sidebar.css), so centring in it lands slightly
+   too low, while centring on the conversation name lands too high. Measured
+   against .conversation-partners-icon -- the row's own glyph, and so the house
+   style -- which sits 2.05px below the name's centre where our icons landed at
+   2.59px: hence a lift of half a pixel. */
 .dm-markers-and-unreads .jitsi-sidebar-call-button,
 .dm-markers-and-unreads .jitsi-dm-speaker-slot {
     position: relative;
-    top: -0.16em;
+    top: -0.034em;
 }
 
 /* Speaker beside a DM/group DM label while a call is live there. Filled in by
