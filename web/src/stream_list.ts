@@ -1244,7 +1244,13 @@ export function update_stream_sidebar_for_narrow(filter: Filter): JQuery | undef
         return undefined;
     }
 
-    if (!info.topic_selected && !zoomed_in) {
+    // A single-threaded channel is always narrowed to its one unnamed topic, so
+    // a topic is "selected" even though the row is what the user picked -- and
+    // there is no topic list under it to carry the selection. Highlight the
+    // channel itself, or nothing appears selected at all.
+    const selection_is_the_channel =
+        !info.topic_selected || stream_data.is_empty_topic_only_channel(stream_id);
+    if (selection_is_the_channel && !zoomed_in) {
         $stream_li.addClass("active-filter");
     }
 
