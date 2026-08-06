@@ -5,6 +5,7 @@ import * as pm_conversations from "./pm_conversations.ts";
 import * as stream_data from "./stream_data.ts";
 import * as stream_list_sort from "./stream_list_sort.ts";
 import * as stream_topic_history from "./stream_topic_history.ts";
+import * as sub_store from "./sub_store.ts";
 import * as unread from "./unread.ts";
 import * as user_topics from "./user_topics.ts";
 
@@ -245,8 +246,17 @@ export function get_next_unread_pm_string(curr_pm: string | undefined): string |
     return undefined;
 }
 
+// Channels with no text chat are skipped by the cycling hotkeys: there is no
+// view to cycle into, so landing on one would just bounce back out.
+function cyclable_stream_ids(): number[] {
+    return stream_list_sort.get_stream_ids().filter((stream_id) => {
+        const sub = sub_store.get(stream_id);
+        return sub === undefined || !stream_data.channel_has_no_text_chat(sub);
+    });
+}
+
 export function get_next_stream(curr_stream_id: number): number | undefined {
-    const my_streams = stream_list_sort.get_stream_ids();
+    const my_streams = cyclable_stream_ids();
     const curr_stream_index = my_streams.indexOf(curr_stream_id);
     return my_streams[
         curr_stream_index === -1 || curr_stream_index === my_streams.length - 1
@@ -256,7 +266,7 @@ export function get_next_stream(curr_stream_id: number): number | undefined {
 }
 
 export function get_prev_stream(curr_stream_id: number): number | undefined {
-    const my_streams = stream_list_sort.get_stream_ids();
+    const my_streams = cyclable_stream_ids();
     const curr_stream_index = my_streams.indexOf(curr_stream_id);
     return my_streams[curr_stream_index <= 0 ? my_streams.length - 1 : curr_stream_index - 1];
 }

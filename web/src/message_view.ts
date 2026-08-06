@@ -61,6 +61,7 @@ import * as spectators from "./spectators.ts";
 import type {NarrowTerm} from "./state_data.ts";
 import {realm} from "./state_data.ts";
 import * as stream_data from "./stream_data.ts";
+import * as sub_store from "./sub_store.ts";
 import * as stream_list from "./stream_list.ts";
 import * as submessage from "./submessage.ts";
 import * as topic_generator from "./topic_generator.ts";
@@ -483,6 +484,25 @@ export let show = (raw_terms: NarrowTerm[], show_opts: ShowMessageViewOpts): voi
     }
     const filter = new Filter(raw_terms);
     filter.try_adjusting_for_moved_with_target();
+
+    // A channel with text chat switched off has no messages and no topics, so
+    // there is nothing to show. Refuse here rather than at each entry point:
+    // this is the one place every route into a view passes through, so a pasted
+    // URL, the search box, a keyboard shortcut and anything added later are all
+    // covered. Landing in the combined feed beats an empty channel view that
+    // reads as "nobody has posted here yet".
+    const target_stream_id = narrow_state.stream_id(filter, true);
+    if (target_stream_id !== undefined) {
+        const target_sub = sub_store.get(target_stream_id);
+        if (target_sub !== undefined && stream_data.channel_has_no_text_chat(target_sub)) {
+            // Navigate by hash rather than recursing into show(): that leaves
+            // the address bar correct (a bounced URL must not stay in it) and
+            // lands on the user's own home view instead of forcing the combined
+            // feed on someone whose home is the inbox.
+            browser_history.go_to_location(`#${user_settings.web_home_view}`);
+            return;
+        }
+    }
 
     if (!show_opts.force_rerender && try_rendering_locally_for_same_narrow(filter, show_opts)) {
         return;

@@ -273,9 +273,15 @@ function get_channel_suggestions(
 
     const query = last.operand;
     const channel_names = stream_data.subscribed_stream_names();
-    let matching_channel_names = channel_names.filter((channel_name) =>
-        channel_matches_query(channel_name, query),
-    );
+    let matching_channel_names = channel_names.filter((channel_name) => {
+        // A channel with no text chat holds no messages, so offering it as a
+        // search destination would only lead somewhere that refuses to open.
+        const sub = stream_data.get_sub_by_name(channel_name);
+        if (sub !== undefined && stream_data.channel_has_no_text_chat(sub)) {
+            return false;
+        }
+        return channel_matches_query(channel_name, query);
+    });
     matching_channel_names = typeahead_helper.sorter(query, matching_channel_names, (x) => x);
     return matching_channel_names.map((channel_name) => {
         const channel = stream_data.get_sub_by_name(channel_name);
