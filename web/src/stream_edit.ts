@@ -818,6 +818,30 @@ export function initialize(): void {
             .trigger("change");
     });
 
+    // A voice channel is either single-threaded or has no text chat at all, so
+    // marking one pins it single-threaded and reveals the switch between those
+    // two. Unmarking it releases the topics policy and restores text chat, which
+    // the server enforces regardless of this.
+    $("#channels_overlay_container").on("change", ".voice_video_enabled", (e) => {
+        const $checkbox = $(e.currentTarget);
+        const voice_on = $checkbox.is(":checked");
+        const $section = $checkbox.closest(".settings-subsection-parent");
+
+        $section.find(".text-chat-disabled-setting").toggleClass("hide", !voice_on);
+        if (!voice_on) {
+            $section.find(".text_chat_disabled").prop("checked", false).trigger("change");
+        }
+
+        const $single_threaded = $section.find(".single-threaded-channel-toggle");
+        if (voice_on && !$single_threaded.is(":checked")) {
+            $single_threaded.prop("checked", true).trigger("change");
+        }
+        $single_threaded.prop("disabled", voice_on);
+        $section
+            .find("select[name='stream-topics-policy-setting']")
+            .prop("disabled", voice_on);
+    });
+
     // Keep the checkbox honest if the dropdown itself is changed.
     $("#channels_overlay_container").on(
         "change",

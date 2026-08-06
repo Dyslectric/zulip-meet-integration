@@ -77,8 +77,10 @@
     widget rather than to the personal settings, whose change handler only
     accepts subscription properties. Only offered when editing: a new
     channel allows calls, and the creation form does not send it. }}
-    {{#if is_stream_edit}}
-        <div class="voice-video-enabled">
+    {{! On the creation form there is no `sub` yet, so the checkbox reflects what
+    the server would do anyway: a new channel allows calls. `(not is_stream_edit)`
+    is how that default is expressed without a sub to read it from. }}
+    <div class="voice-video-enabled">
             {{#if (lookup sub "is_web_public")}}
                 {{! Anyone on the internet can read a web-public channel, so it
                     cannot have calls; offering the checkbox would only produce
@@ -88,19 +90,32 @@
                   setting_name="voice_video_enabled"
                   is_checked=false
                   is_disabled=true
-                  label=(t "Allow voice and video calls")
-                  tooltip_message=(t "Web-public channels cannot have calls, because anyone on the internet can read them.")
+                  label=(t "Make this a voice channel")
+                  tooltip_message=(t "Web-public channels cannot be voice channels, because anyone on the internet can read them.")
                   }}
             {{else}}
+                {{! Calls exist only on voice channels, so this one checkbox is
+                both "is a voice channel" and "may have calls". Opt-in: it shows
+                the channel as a speaker and pins it single-threaded. }}
                 {{> ../settings/settings_checkbox
                   prefix=prefix
                   setting_name="voice_video_enabled"
                   is_checked=(lookup sub "voice_video_enabled")
-                  label=(t "Allow voice and video calls")
+                  label=(t "Make this a voice channel")
                   }}
+                {{! A voice channel is either single-threaded or has no text at
+                all; this is the switch between the two. Only meaningful on a
+                voice channel, so it hides with it. }}
+                <div class="text-chat-disabled-setting{{#unless (lookup sub "voice_video_enabled")}} hide{{/unless}}">
+                    {{> ../settings/settings_checkbox
+                      prefix=prefix
+                      setting_name="text_chat_disabled"
+                      is_checked=(lookup sub "text_chat_disabled")
+                      label=(t "Disable text chat in this channel")
+                      }}
+                </div>
             {{/if}}
-        </div>
-    {{/if}}
+    </div>
 
     <div class="input-group">
         {{! A plainer way to say topics_policy = empty_topic_only: everything is

@@ -244,6 +244,29 @@ $("body").on("click", ".advanced-configurations-container .advance-config-toggle
 // Stores the previous state of the stream creation checkbox.
 let stream_announce_previous_value: boolean;
 
+// Anyone on the internet can read a web-public channel, so it cannot host
+// calls — the server refuses to mint a token for one. Choosing web-public in
+// the creation form therefore switches voice off and locks the checkbox, the
+// same way the edit form disables it for an already-web-public channel.
+function update_voice_video_state(): void {
+    const is_web_public =
+        stream_settings_components.channel_creation_privacy_widget.value() === "web-public";
+    const $voice = $<HTMLInputElement>("#id_new_voice_video_enabled");
+    if ($voice.length === 0) {
+        return;
+    }
+    if (is_web_public) {
+        $voice.prop("checked", false);
+    }
+    $voice.prop("disabled", is_web_public);
+    $voice
+        .closest(".settings-checkbox-wrapper")
+        .toggleClass("control-label-disabled", is_web_public);
+    // Let the shared handler reconcile the text-chat checkbox and the topics
+    // policy with whatever state the voice-channel checkbox has ended up in.
+    $voice.trigger("change");
+}
+
 // Within the new stream modal...
 function update_announce_stream_state(): void {
     // If there is no new_stream_announcements_stream, we simply hide the widget.
@@ -375,6 +398,15 @@ function create_stream(): void {
 
     const topics_policy = $("#id_new_topics_policy").val();
 
+    // A web-public channel cannot host calls, so both are forced off for one
+    // regardless of what the (disabled) inputs say. Text chat can only be
+    // switched off on a voice channel; the server enforces all of this too.
+    const voice_video_enabled =
+        !is_web_public && util.the($<HTMLInputElement>("#id_new_voice_video_enabled")).checked;
+    const text_chat_disabled =
+        voice_video_enabled &&
+        util.the($<HTMLInputElement>("#id_new_text_chat_disabled")).checked;
+
     const data: Record<string, string> = {
         subscriptions,
         is_web_public: JSON.stringify(is_web_public),
@@ -384,6 +416,8 @@ function create_stream(): void {
         message_retention_days: JSON.stringify(message_retention_selection),
         announce: JSON.stringify(announce),
         topics_policy: JSON.stringify(topics_policy),
+        voice_video_enabled: JSON.stringify(voice_video_enabled),
+        text_chat_disabled: JSON.stringify(text_chat_disabled),
         principals,
         ...group_setting_values,
     };
@@ -543,6 +577,7 @@ export function show_new_stream_modal(): void {
     // set default state for "announce stream" and "default stream" option.
     $("#stream_creation_form .default-stream input").prop("checked", false);
     update_announce_stream_state();
+    update_voice_video_state();
     stream_ui_updates.update_can_subscribe_group_label($("#stream-creation"));
     stream_ui_updates.update_default_stream_option_state($("#stream-creation"));
     stream_ui_updates.update_history_public_to_subscribers_state($("#stream-creation"));
@@ -672,7 +707,10 @@ export function set_up_handlers(): void {
     set_up_group_setting_widgets();
     settings_components.enable_opening_typeahead_on_clicking_label($container);
     folder_widget = stream_settings_components.set_up_folder_dropdown_widget();
-    stream_edit.set_up_channel_privacy_dropdown_widget(update_announce_stream_state);
+    stream_edit.set_up_channel_privacy_dropdown_widget(() => {
+        update_announce_stream_state();
+        update_voice_video_state();
+    });
 }
 
 export function initialize(): void {
