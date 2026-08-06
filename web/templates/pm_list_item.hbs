@@ -18,14 +18,6 @@
 
         </span>
         <div class="dm-markers-and-unreads">
-            {{! Call affordances, right-aligned with the unread markers. The call
-            button appears on hover; jitsi_sidebar.ts fills the speaker slot
-            while a call is live in this conversation, so the button sits
-            immediately to the left of the speaker when there is one. }}
-            <div class="jitsi-sidebar-call-button hidden-for-spectators" tabindex="0" role="button" data-tippy-content="{{t 'Start or join a call' }}" data-user-ids-string="{{user_ids_string}}">
-                <i class="zulip-icon zulip-icon-voice-call" aria-hidden="true"></i>
-            </div>
-            <span class="jitsi-dm-speaker-slot"></span>
             {{#if has_unread_mention}}
                 <span class="unread_mention_info">
                     @
@@ -34,6 +26,16 @@
             <span class="unread_count {{#if is_zero}}zero_count{{/if}}">
                 {{unread}}
             </span>
+            {{! Call affordances last on purpose. This box is baseline-aligned,
+            and a flex container with no baseline-aligned item takes its baseline
+            from its first item: an icon has no text baseline, so putting these
+            first shifted the whole group, unread count included. The call button
+            appears on hover; jitsi_sidebar.ts fills the speaker slot while a
+            call is live in this conversation. }}
+            <div class="jitsi-sidebar-call-button hidden-for-spectators" tabindex="0" role="button" data-tippy-content="{{t 'Start or join a call' }}" data-user-ids-string="{{user_ids_string}}">
+                <i class="zulip-icon zulip-icon-voice-call" aria-hidden="true"></i>
+            </div>
+            <span class="jitsi-dm-speaker-slot"></span>
         </div>
     </a>
 </li>

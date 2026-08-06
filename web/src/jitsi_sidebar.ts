@@ -103,7 +103,11 @@ function ingest(raw: unknown): void {
         return;
     }
     for (const room of parsed.data.rooms) {
-        if (!room.active) {
+        // A room can be active with nobody in it -- created and not yet joined,
+        // or everyone has left and the service has not retired it. From the
+        // sidebar's point of view that is not a call: showing a speaker and
+        // "0 in call" for it says something untrue.
+        if (!room.active || room.count === 0) {
             continue;
         }
         if (room.stream_id !== undefined) {
@@ -130,7 +134,8 @@ export function apply_pushed_occupancy(event: unknown): void {
         return;
     }
     const data = parsed.data;
-    if (data.active) {
+    // An empty room is not a call; see ingest.
+    if (data.active && data.count > 0) {
         occupancy_by_stream.set(data.stream_id, {...data, drifted: false});
     } else {
         occupancy_by_stream.delete(data.stream_id);

@@ -518,22 +518,32 @@ export async function initialize_everything(state_data) {
         });
     }
 
-    $("body").on("click", ".jitsi-call-button, .jitsi-sidebar-call-button", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        start_jitsi_call_from(this);
-    });
-
-    // A channel row's button lives inside the row's link, and #stream_filters
-    // delegates clicks on that link to narrowing to the channel. Bind here as
-    // well as on the body: jQuery walks from the click target outwards, so this
-    // deeper match runs first and can stop the narrow -- the same way the row's
-    // other controls avoid it. Without this, clicking the button just narrows.
-    $("#stream_filters").on("click", ".jitsi-sidebar-call-button", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        start_jitsi_call_from(this);
-    });
+    // Listen in the capture phase, on the document.
+    //
+    // A channel row's call button sits inside the row's link, and #stream_filters
+    // delegates clicks on that link to narrowing to the channel; bubbling from
+    // the button therefore reaches the narrow handler, which wins. Delegating
+    // from #stream_filters instead would run first, but that element does not
+    // exist until initialize_left_sidebar() runs later in this function, so the
+    // handler would silently bind to nothing. Capturing on the document avoids
+    // both problems: it runs before every bubbling handler, and the document is
+    // always there.
+    document.addEventListener(
+        "click",
+        (e) => {
+            if (!(e.target instanceof Element)) {
+                return;
+            }
+            const button = e.target.closest(".jitsi-call-button, .jitsi-sidebar-call-button");
+            if (!(button instanceof HTMLElement)) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            start_jitsi_call_from(button);
+        },
+        {capture: true},
+    );
 
     // Call-aware left sidebar: speaker/lock icons and participant avatars on
     // channels with a live call, polled from the bulk occupancy feed.
