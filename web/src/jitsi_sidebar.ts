@@ -48,7 +48,8 @@ type SidebarOccupancy = {
 
 // A pushed jitsi_occupancy server event (one channel's live roster).
 const pushed_occupancy_schema = z.object({
-    stream_id: z.number(),
+    stream_id: z.optional(z.number()),
+    user_ids: z.optional(z.array(z.number())),
     active: z.boolean(),
     count: z.number(),
     occupants: z.array(
@@ -135,10 +136,24 @@ export function apply_pushed_occupancy(event: unknown): void {
     }
     const data = parsed.data;
     // An empty room is not a call; see ingest.
-    if (data.active && data.count > 0) {
-        occupancy_by_stream.set(data.stream_id, {...data, drifted: false});
-    } else {
-        occupancy_by_stream.delete(data.stream_id);
+    const live = data.active && data.count > 0;
+    if (data.stream_id !== undefined) {
+        if (live) {
+            occupancy_by_stream.set(data.stream_id, {
+                ...data,
+                stream_id: data.stream_id,
+                drifted: false,
+            });
+        } else {
+            occupancy_by_stream.delete(data.stream_id);
+        }
+    } else if (data.user_ids !== undefined) {
+        const key = dm_key(data.user_ids);
+        if (live) {
+            dm_calls.add(key);
+        } else {
+            dm_calls.delete(key);
+        }
     }
     apply();
 }

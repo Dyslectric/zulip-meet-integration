@@ -305,33 +305,55 @@ def jitsi_hook_occupancy(request: HttpRequest) -> HttpResponse:
         return _bad_request("invalid JSON")
     realm_id = data.get("realm_id")
     stream_id = data.get("stream_id")
-    if not isinstance(realm_id, int) or not isinstance(stream_id, int):
-        return _bad_request("realm_id and stream_id are required")
+    user_ids = data.get("user_ids")
+    if not isinstance(realm_id, int):
+        return _bad_request("realm_id is required")
+    if not isinstance(stream_id, int) and not isinstance(user_ids, list):
+        return _bad_request("one of stream_id or user_ids is required")
 
     try:
         realm = Realm.objects.get(id=realm_id)
-        stream = Stream.objects.get(id=stream_id, realm=realm)
-    except (Realm.DoesNotExist, Stream.DoesNotExist):
-        # A call for a channel that has since gone away: nobody to notify, and not
-        # an error worth a 400.
-        return json_success(request)
-
-    subscriber_ids = list(
-        get_active_subscriptions_for_stream_id(
-            stream.id, include_deactivated_users=False
-        ).values_list("user_profile_id", flat=True)
-    )
-    if not subscriber_ids:
+    except Realm.DoesNotExist:
         return json_success(request)
 
     event = {
         "type": "jitsi_occupancy",
-        "stream_id": stream.id,
         "active": bool(data.get("active", True)),
         "count": int(data.get("count", 0)),
         "occupants": data.get("occupants") or [],
     }
-    send_event_on_commit(realm, event, subscriber_ids)
+
+    if isinstance(stream_id, int):
+        try:
+            stream = Stream.objects.get(id=stream_id, realm=realm)
+        except Stream.DoesNotExist:
+            # A call for a channel that has since gone away: nobody to notify, and
+            # not an error worth a 400.
+            return json_success(request)
+        recipient_ids = list(
+            get_active_subscriptions_for_stream_id(
+                stream.id, include_deactivated_users=False
+            ).values_list("user_profile_id", flat=True)
+        )
+        event["stream_id"] = stream.id
+    else:
+        # A DM/group call: its participants are the only people entitled to know
+        # about it, so they are exactly who the event goes to -- and only those
+        # of them who really are active users of this realm.
+        assert isinstance(user_ids, list)
+        recipient_ids = list(
+            UserProfile.objects.filter(
+                id__in=[user_id for user_id in user_ids if isinstance(user_id, int)],
+                realm=realm,
+                is_active=True,
+            ).values_list("id", flat=True)
+        )
+        event["user_ids"] = sorted(recipient_ids)
+
+    if not recipient_ids:
+        return json_success(request)
+
+    send_event_on_commit(realm, event, recipient_ids)
     return json_success(request)
 
 
