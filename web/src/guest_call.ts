@@ -28,6 +28,7 @@ const call_response_schema = z.object({url: z.string()});
 const error_response_schema = z.object({msg: z.string()});
 const knock_response_schema = z.object({knock_id: z.string()});
 const knock_status_schema = z.object({admitted: z.boolean()});
+const csrf_failure_schema = z.object({code: z.literal("CSRF_FAILED")});
 
 export function is_spectator(): boolean {
     return page_params.is_spectator;
@@ -44,6 +45,13 @@ export function is_spectator(): boolean {
 // Lives here rather than in the two callers so a member and a visitor get the
 // same answer to the same refusal.
 export function report_call_refusal(xhr: JQuery.jqXHR): void {
+    // A stale session is not a refusal, and saying "Cannot join: CSRF token
+    // incorrect" tells the user nothing they can act on. Zulip already handles
+    // this case properly one layer up — channel.ts reloads the page on
+    // CSRF_FAILED — so the only thing left to do here is stay out of the way.
+    if (xhr.status === 403 && csrf_failure_schema.safeParse(xhr.responseJSON).success) {
+        return;
+    }
     const message =
         error_response_schema.safeParse(xhr.responseJSON).data?.msg ??
         $t({defaultMessage: "You cannot join this call right now."});

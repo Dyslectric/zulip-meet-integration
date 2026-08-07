@@ -14,6 +14,7 @@
 import * as z from "zod/mini";
 
 import * as channel from "./channel.ts";
+import {page_params} from "./page_params.ts";
 
 export const lounge_room_schema = z.object({
     id: z.number(),
@@ -52,9 +53,26 @@ let on_change: () => void = () => {
     // Set by initialize(); a no-op until then so an early event is harmless.
 };
 
+// How often a visitor re-asks for the room list. Matched to the occupancy poll
+// so that the two halves of what they are shown -- which rooms exist, and who is
+// in them -- cannot disagree for long.
+const VISITOR_POLL_MS = page_params.development_environment ? 2000 : 15000;
+
 export function initialize(redraw: () => void): void {
     on_change = redraw;
     fetch_rooms();
+
+    // A visitor with no account has no event queue, so `lounge_rooms` events --
+    // the thing that tells everybody else a room was started, locked, or opened
+    // to knocking -- never reach them. Without this their sidebar is frozen at
+    // page load: a room made non-knockable still offers them an ask control, and
+    // a room started after they arrived never appears at all.
+    //
+    // Polling rather than anything cleverer for the same reason the knock status
+    // is polled: there is nowhere to push to.
+    if (page_params.is_spectator) {
+        setInterval(fetch_rooms, VISITOR_POLL_MS);
+    }
 }
 
 export function rooms_in(channel_id: number): LoungeRoom[] {
