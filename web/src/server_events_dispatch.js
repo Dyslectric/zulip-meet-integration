@@ -254,7 +254,19 @@ export function dispatch_normal_event(event) {
             // Somebody is at the door of a room this user moderates. Sent only
             // to those who can open it, and kept nowhere on either side: the
             // knock stands for a couple of minutes and is then over.
-            lounge_rooms.record_knock(event.room_id, event.user_id);
+            //
+            // Which field the event carries says who it is. An account holder is
+            // a user_id to look up; a visitor is a knock id and the name they
+            // typed, because there is nothing to look up.
+            if (event.guest_knock_id !== undefined) {
+                lounge_rooms.record_guest_knock(
+                    event.room_id,
+                    event.guest_knock_id,
+                    event.guest_name,
+                );
+            } else {
+                lounge_rooms.record_knock(event.room_id, event.user_id);
+            }
             break;
 
         case "onboarding_steps":

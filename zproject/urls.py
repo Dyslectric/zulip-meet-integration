@@ -285,9 +285,11 @@ from zerver.views.video_calls import (
     create_nextcloud_talk_url,
     deauthorize_zoom_user,
     get_bigbluebutton_url,
+    get_guest_knock_status,
     get_jitsi_occupancy,
     get_jitsi_occupancy_all,
     join_bigbluebutton,
+    knock_on_lounge_room_as_guest,
     make_constructor_groups_video_call,
     make_webex_video_call,
     make_zoom_video_call,
@@ -632,6 +634,14 @@ v1_api_and_json_patterns = [
     rest_path(
         "calls/jitsi/create_as_guest",
         POST=(create_jitsi_call_as_guest, {"allow_anonymous_user_web"}),
+    ),
+    rest_path(
+        "calls/jitsi/knock_as_guest",
+        POST=(knock_on_lounge_room_as_guest, {"allow_anonymous_user_web"}),
+    ),
+    rest_path(
+        "calls/jitsi/knock_status",
+        GET=(get_guest_knock_status, {"allow_anonymous_user_web"}),
     ),
     rest_path("calls/jitsi/occupancy", GET=get_jitsi_occupancy),
     rest_path(

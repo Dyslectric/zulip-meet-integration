@@ -97,6 +97,14 @@ export function knock_on_room(room: LoungeRoom): void {
     if (lounge_rooms.has_knocked(room.id)) {
         return;
     }
+    // A visitor asks by a different route: they have no account to be added to
+    // the room's invited set, so what they get back is a short-lived knock id to
+    // return with, and they are asked for a name on the way — a moderator
+    // deciding whether to admit "Guest" has been told nothing at all.
+    if (guest_call.is_spectator()) {
+        guest_call.knock_as_guest(room.id, {label: room.name});
+        return;
+    }
     // Recorded before the request rather than in its callback: the point of the
     // pending state is to stop a second ask, and the window it has to cover is
     // exactly the one where the first is still in flight.
@@ -106,14 +114,26 @@ export function knock_on_room(room: LoungeRoom): void {
 
 // Answer a knock. Additive on the server, so two moderators answering two knocks
 // in the same moment do not undo each other.
-export function admit_to_room(room_id: number, user_id: number): void {
+export function admit_to_room(
+    room_id: number,
+    knocker_key: string,
+    who: {user_id: number} | {guest_knock_id: string},
+): void {
     void channel.post({
         url: `/json/lounges/rooms/${room_id}/admit`,
-        data: {user_id},
+        data: who,
         success(): void {
             // They are through the door, so they are no longer at it. The room
-            // list refreshes from the server's event; this is only the person.
-            lounge_rooms.clear_knock(room_id, user_id);
+            // list refreshes from the server's event for an account holder; a
+            // visitor changes nobody's room list, and is polling for the answer
+            // themselves, so taking them off the door here is the whole of it.
+            lounge_rooms.clear_knock(room_id, knocker_key);
+        },
+        error(xhr): void {
+            // A knock expires while a moderator is deciding often enough to be
+            // worth saying rather than leaving the row sitting there.
+            guest_call.report_call_refusal(xhr);
+            lounge_rooms.clear_knock(room_id, knocker_key);
         },
     });
 }

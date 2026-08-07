@@ -199,6 +199,8 @@
 * [Start a lounge room](/api/create-lounge-room)
 * [Update a lounge room](/api/update-lounge-room)
 * [Ask to join a lounge room](/api/knock-on-lounge-room)
+* [Ask to join a lounge room as a guest](/api/knock-on-lounge-room-as-guest)
+* [Check whether a guest's knock has been answered](/api/get-guest-knock-status)
 * [Admit a user to a lounge room](/api/admit-to-lounge-room)
 * [Create Nextcloud Talk video call](/api/create-nextcloud-talk-video-call)
 * [Create Webex video call](/api/create-webex-video-call)

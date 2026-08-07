@@ -1005,6 +1005,146 @@ class JitsiGuestCallTest(ZulipTestCase):
         result = self.guest_call(lounge_room_id=str(room["id"]))
         self.assert_json_error(result, "Invalid channel ID")
 
+    # -- a visitor asking to be let into a private room --------------------
+
+    def private_room(self) -> Any:
+        room = self.make_lounge_room(is_private=True)
+        self.assertTrue(
+            LoungeRoom.objects.get(id=room["id"]).knockable_by_guests is False,
+            "fixture assumption: guest knocking is off by default",
+        )
+        LoungeRoom.objects.filter(id=room["id"]).update(knockable_by_guests=True)
+        return room
+
+    def guest_knock(self, room_id: int, name: str = "Sam") -> Any:
+        self.logout()
+        with self.settings(**self.GUEST_SETTINGS):
+            return self.client_post(
+                "/json/calls/jitsi/knock_as_guest",
+                {"lounge_room_id": str(room_id), "full_name": name},
+            )
+
+    def guest_join_room(self, room_id: int, knock_id: str | None = None) -> Any:
+        data = {"lounge_room_id": str(room_id)}
+        if knock_id is not None:
+            data["knock_id"] = knock_id
+        self.logout()
+        with self.settings(**self.GUEST_SETTINGS):
+            return self.client_post("/json/calls/jitsi/create_as_guest", data)
+
+    def test_a_visitor_may_ask_to_be_let_into_a_private_room(self) -> None:
+        """The mechanism a visitor has no account for: admitting cannot mean
+        adding them to a set of Zulip accounts, so their knock is a short-lived
+        capability they come back with instead."""
+        room = self.private_room()
+        listed = self.assert_json_success(self.list_rooms())["rooms"][0]
+        self.assertFalse(listed["can_join"])
+        self.assertTrue(listed["can_knock"])
+
+        knock_id = self.assert_json_success(self.guest_knock(room["id"]))["knock_id"]
+
+        # Not admitted yet: the id alone is not a way in.
+        self.assert_json_error(self.guest_join_room(room["id"], knock_id), "This room is private.")
+
+        self.login_user(self.user)
+        self.assert_json_success(
+            self.client_post(
+                f"/json/lounges/rooms/{room['id']}/admit", {"guest_knock_id": knock_id}
+            )
+        )
+        self.assert_json_success(self.guest_join_room(room["id"], knock_id))
+
+    def test_the_name_a_visitor_gave_is_the_name_they_join_under(self) -> None:
+        """A moderator admitting "Sam (guest)" should not then find somebody
+        else's wording in the room."""
+        room = self.private_room()
+        knock_id = self.assert_json_success(self.guest_knock(room["id"], "Sam"))["knock_id"]
+        self.login_user(self.user)
+        self.client_post(f"/json/lounges/rooms/{room['id']}/admit", {"guest_knock_id": knock_id})
+        # Even though this request asks to be called something else.
+        self.logout()
+        with self.settings(**self.GUEST_SETTINGS):
+            result = self.client_post(
+                "/json/calls/jitsi/create_as_guest",
+                {
+                    "lounge_room_id": str(room["id"]),
+                    "knock_id": knock_id,
+                    "full_name": "Somebody Else",
+                },
+            )
+        data = self.assert_json_success(result)
+        self.assertEqual(self.decode(data["url"])["context"]["user"]["name"], "Sam (guest)")
+
+    def test_a_knock_admits_one_person_once(self) -> None:
+        """The id is spent on the way in. Otherwise it stays good for the rest of
+        its two minutes and could be handed to somebody else -- and the whole
+        point of it is that it admits the person the moderator looked at."""
+        room = self.private_room()
+        knock_id = self.assert_json_success(self.guest_knock(room["id"]))["knock_id"]
+        self.login_user(self.user)
+        self.client_post(f"/json/lounges/rooms/{room['id']}/admit", {"guest_knock_id": knock_id})
+        self.assert_json_success(self.guest_join_room(room["id"], knock_id))
+        self.assert_json_error(self.guest_join_room(room["id"], knock_id), "This room is private.")
+
+    def test_a_knock_is_good_for_one_room(self) -> None:
+        first = self.private_room()
+        second = self.make_lounge_room(is_private=True)
+        LoungeRoom.objects.filter(id=second["id"]).update(knockable_by_guests=True)
+        knock_id = self.assert_json_success(self.guest_knock(first["id"]))["knock_id"]
+        self.login_user(self.user)
+        self.client_post(f"/json/lounges/rooms/{first['id']}/admit", {"guest_knock_id": knock_id})
+        self.assert_json_error(
+            self.guest_join_room(second["id"], knock_id), "This room is private."
+        )
+
+    def test_a_room_that_does_not_take_visitor_knocks_says_so(self) -> None:
+        room = self.make_lounge_room(is_private=True)  # knockable_by_guests defaults False
+        listed = self.assert_json_success(self.list_rooms())["rooms"][0]
+        self.assertFalse(listed["can_knock"])
+        self.assert_json_error(self.guest_knock(room["id"]), "You cannot ask to join this room.")
+
+    def test_there_is_nothing_to_ask_about_a_public_room(self) -> None:
+        room = self.make_lounge_room()
+        self.assert_json_error(self.guest_knock(room["id"]), "You cannot ask to join this room.")
+
+    def test_a_visitor_can_poll_for_the_answer(self) -> None:
+        """They hold no Zulip account and so have no event queue to push to."""
+        room = self.private_room()
+        knock_id = self.assert_json_success(self.guest_knock(room["id"]))["knock_id"]
+
+        def admitted() -> Any:
+            self.logout()
+            with self.settings(**self.GUEST_SETTINGS):
+                result = self.client_get(
+                    "/json/calls/jitsi/knock_status",
+                    {"lounge_room_id": str(room["id"]), "knock_id": knock_id},
+                )
+            return self.assert_json_success(result)["admitted"]
+
+        self.assertFalse(admitted())
+        self.login_user(self.user)
+        self.client_post(f"/json/lounges/rooms/{room['id']}/admit", {"guest_knock_id": knock_id})
+        self.assertTrue(admitted())
+
+    def test_an_invented_knock_id_is_not_a_way_in(self) -> None:
+        room = self.private_room()
+        self.assert_json_error(
+            self.guest_join_room(room["id"], "not-a-real-knock"), "This room is private."
+        )
+
+    def test_a_visitors_knock_reaches_the_moderators(self) -> None:
+        room = self.private_room()
+        with self.capture_send_event_calls(expected_num_events=1) as events:
+            self.guest_knock(room["id"], "Sam")
+        event = events[0]["event"]
+        self.assertEqual(event["type"], "lounge_knock")
+        # No user_id: there is nobody to look up. The name is sent already
+        # marked, so no client is tempted to render it as though it were vouched
+        # for.
+        self.assertNotIn("user_id", event)
+        self.assertEqual(event["guest_name"], "Sam (guest)")
+        self.assertIn(self.user.id, events[0]["users"])
+
     # -- what a visitor is told exists ------------------------------------
 
     def list_rooms(self) -> Any:

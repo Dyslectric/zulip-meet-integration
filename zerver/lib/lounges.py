@@ -24,10 +24,12 @@ from django.utils.translation import gettext as _
 
 from zerver.lib.call_presence import authenticated_user_is_present, moderator_is_present
 from zerver.lib.exceptions import JsonableError
+from zerver.lib.stream_subscription import get_active_subscriptions_for_stream_id
 from zerver.lib.streams import access_stream_by_id
 from zerver.lib.user_groups import get_recursive_group_members, is_user_in_group
 from zerver.models import LoungeRoom, Stream, UserProfile
 from zerver.models.streams import CallDoorPolicyEnum
+from zerver.tornado.django_api import send_event_on_commit
 
 
 def access_lounge_by_id(user: UserProfile, stream_id: int) -> Stream:
@@ -289,7 +291,11 @@ def lounge_room_to_dict(
             "creator_id": room.creator_id,
             "is_private": room.is_private,
             "can_join": not room.is_private,
-            "can_knock": False,
+            # A visitor may ask, if the room takes asking from visitors. What
+            # they get back is a short-lived knock id rather than a place in the
+            # invited set, since they have no account to put in one — see
+            # zerver/lib/guest_knocks.py.
+            "can_knock": room.is_private and room.knockable_by_guests,
             "can_administer": False,
             "waiting_for_doorman": user_is_waiting_for_doorman(None, stream, room),
             "knockable_by_users": room.knockable_by_users,
@@ -313,3 +319,52 @@ def lounge_room_to_dict(
     if moderates:
         room_dict["invited_user_ids"] = sorted(invited.id for invited in room.invited_users.all())
     return room_dict
+
+
+def notify_lounge_room_knock(
+    stream: Stream,
+    room: LoungeRoom,
+    *,
+    knocker: UserProfile | None = None,
+    guest_knock_id: str | None = None,
+    guest_name: str | None = None,
+) -> None:
+    """Tell the people who can open the door that somebody is at it.
+
+    A knock is a live request, not a record: it is delivered to whoever is
+    listening and kept nowhere. That is the same rule the room itself follows —
+    nothing about a lounge outlives the moment it describes — and it means an
+    unanswered knock simply goes unanswered rather than becoming a queue of
+    stale requests to work through later.
+
+    Addressed to the room's moderators intersected with the lounge's
+    subscribers. A realm administrator who is not in the lounge would be able to
+    admit somebody in principle, but showing them a knock for a conversation
+    they are not part of is noise, not oversight.
+
+    Two kinds of knocker, told apart by which field the event carries. An account
+    holder is a `user_id`, and the client looks them up. A visitor is a
+    `guest_knock_id` and the name they typed, because there is nothing to look
+    up — which is also why the name is sent marked, so no client is tempted to
+    render it as though the deployment vouched for it.
+    """
+    subscriber_ids = set(
+        get_active_subscriptions_for_stream_id(
+            stream.id, include_deactivated_users=False
+        ).values_list("user_profile_id", flat=True)
+    )
+    recipient_ids = sorted(room_moderator_ids(stream, room) & subscriber_ids)
+    if not recipient_ids:
+        return
+    event: dict[str, Any] = {
+        "type": "lounge_knock",
+        "channel_id": stream.id,
+        "room_id": room.id,
+        "room_name": room.name,
+    }
+    if knocker is not None:
+        event["user_id"] = knocker.id
+    else:
+        event["guest_knock_id"] = guest_knock_id
+        event["guest_name"] = guest_name
+    send_event_on_commit(stream.realm, event, recipient_ids)

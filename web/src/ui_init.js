@@ -604,9 +604,19 @@ export async function initialize_everything(state_data) {
             e.preventDefault();
             e.stopPropagation();
             const room_id = Number.parseInt(admit.dataset.loungeRoomId ?? "", 10);
+            const knocker_key = admit.dataset.knockerKey ?? "";
+            const guest_knock_id = admit.dataset.guestKnockId;
             const user_id = Number.parseInt(admit.dataset.userId ?? "", 10);
-            if (!Number.isNaN(room_id) && !Number.isNaN(user_id)) {
-                lounge_rooms_ui.admit_to_room(room_id, user_id);
+            if (Number.isNaN(room_id) || knocker_key === "") {
+                return;
+            }
+            // Which of the two the row carries decides how the "yes" is written
+            // down: an account joins the room's invited set, a visitor's knock
+            // is marked admitted for them to come back with.
+            if (guest_knock_id !== undefined) {
+                lounge_rooms_ui.admit_to_room(room_id, knocker_key, {guest_knock_id});
+            } else if (!Number.isNaN(user_id)) {
+                lounge_rooms_ui.admit_to_room(room_id, knocker_key, {user_id});
             }
             return;
         }

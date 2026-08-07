@@ -38,6 +38,12 @@ from zerver.lib.cache import (
 )
 from zerver.lib.call_presence import authenticated_user_is_present, moderator_is_present
 from zerver.lib.exceptions import ErrorCode, JsonableError, MissingAuthenticationError
+from zerver.lib.guest_knocks import (
+    get_guest_knock,
+    guest_knock_is_admitted,
+    record_guest_knock,
+    spend_guest_knock,
+)
 from zerver.lib.jitsi_token import (
     GUEST_NAME_MAX_LENGTH,
     build_guest_context,
@@ -52,6 +58,7 @@ from zerver.lib.jitsi_token import (
 from zerver.lib.lounges import (
     access_lounge_room_by_id,
     channel_moderator_ids,
+    notify_lounge_room_knock,
     reconcile_lounge_rooms,
     room_moderator_ids,
     user_may_join_room,
@@ -1121,6 +1128,106 @@ def create_jitsi_call(
     )
 
 
+def guest_display_name(chosen: str) -> str:
+    """What a visitor is called, from what they typed.
+
+    Marked rather than taken at face value. The name goes to everyone in the call
+    — and, once visitors can knock, to the moderator deciding whether to let them
+    in — while nothing behind it has been verified. A visitor who types a
+    colleague's name gets that name and the fact that they are a guest.
+
+    One function so that the name on the knock and the name in the call are the
+    same string: a moderator admitting "Sam (guest)" should not then find
+    somebody else's wording in the room.
+    """
+    name = chosen.strip()[:GUEST_NAME_MAX_LENGTH]
+    return _("{name} (guest)").format(name=name) if name else _("Guest")
+
+
+def access_web_public_lounge_room(realm: Realm, room_id: int) -> tuple[Stream, LoungeRoom]:
+    """A room a visitor may reach at all: one in a web-public lounge.
+
+    The same three checks the guest mint makes, pulled out so that knocking and
+    joining cannot drift apart — a visitor able to knock on a room they could
+    never join would be a cruel joke, and the reverse would be a hole.
+    """
+    try:
+        room = LoungeRoom.objects.select_related("channel").get(id=room_id, channel__realm=realm)
+    except LoungeRoom.DoesNotExist:
+        raise JsonableError(_("This room has ended."))
+    stream = access_web_public_stream(room.channel_id, realm)
+    if not stream.is_lounge:
+        raise JsonableError(_("This channel is not a lounge."))
+    return stream, room
+
+
+@typed_endpoint
+def knock_on_lounge_room_as_guest(
+    request: HttpRequest,
+    maybe_user_profile: UserProfile | AnonymousUser,
+    *,
+    lounge_room_id: Json[int],
+    full_name: str = "",
+) -> HttpResponse:
+    """Ask, as a visitor with no account, to be let into a private room.
+
+    Returns a `knock_id`: an unguessable, short-lived capability that is the
+    whole of the visitor's claim afterwards. It admits exactly one person to
+    exactly one room and is spent on the way in, so a moderator who says yes to
+    somebody is saying yes to them and not to whoever they pass it to.
+
+    Nothing about the visitor is stored beyond the name they chose and the two
+    minutes the knock stands for.
+    """
+    realm = get_valid_realm_from_request(request)
+    stream, room = access_web_public_lounge_room(realm, lounge_room_id)
+
+    if not room.is_private:
+        # Nothing to ask for: they can simply join.
+        raise JsonableError(_("You cannot ask to join this room."))
+    if not room.knockable_by_guests:
+        # The room takes knocks from account holders but not from visitors, which
+        # is a distinction its moderators are entitled to draw.
+        raise JsonableError(_("You cannot ask to join this room."))
+
+    # Marked once, here, and carried marked from now on: this string is what the
+    # moderator reads when deciding and what the room shows if they say yes.
+    display_name = guest_display_name(full_name)
+    knock_id = record_guest_knock(realm_id=realm.id, room_id=room.id, display_name=display_name)
+    notify_lounge_room_knock(
+        stream, room, knocker=None, guest_knock_id=knock_id, guest_name=display_name
+    )
+    return json_success(request, {"knock_id": knock_id})
+
+
+@typed_endpoint
+def get_guest_knock_status(
+    request: HttpRequest,
+    maybe_user_profile: UserProfile | AnonymousUser,
+    *,
+    lounge_room_id: Json[int],
+    knock_id: str,
+) -> HttpResponse:
+    """Whether a visitor's knock has been answered yet.
+
+    Polled by the asking client, because there is nowhere to push an event to:
+    a visitor holds no Zulip account and so has no event queue of their own. The
+    answer is a single boolean and the knock expires on its own, so this cannot
+    become a way to enumerate anything — an id that was never real and one that
+    has expired give the same answer.
+    """
+    realm = get_valid_realm_from_request(request)
+    access_web_public_lounge_room(realm, lounge_room_id)
+    return json_success(
+        request,
+        {
+            "admitted": guest_knock_is_admitted(
+                realm_id=realm.id, room_id=lounge_room_id, knock_id=knock_id
+            )
+        },
+    )
+
+
 @typed_endpoint
 def create_jitsi_call_as_guest(
     request: HttpRequest,
@@ -1129,6 +1236,7 @@ def create_jitsi_call_as_guest(
     stream_id: Json[int] | None = None,
     lounge_room_id: Json[int] | None = None,
     full_name: str = "",
+    knock_id: str | None = None,
     epoch_token: str | None = None,
 ) -> HttpResponse:
     """A call token for a visitor with no Zulip account.
@@ -1157,6 +1265,9 @@ def create_jitsi_call_as_guest(
     # The channel a lounge room belongs to, carried separately from `stream_id`
     # for the same reason as in `create_jitsi_call`.
     lounge_channel_id: int | None = None
+    # Set when an admitted knock carries a name, which is already the finished
+    # display name; otherwise the name is built from what this request asked for.
+    admitted_name: str | None = None
     if lounge_room_id is not None:
         try:
             lounge_room = LoungeRoom.objects.select_related("channel").get(
@@ -1171,10 +1282,21 @@ def create_jitsi_call_as_guest(
         if not stream.is_lounge:
             raise JsonableError(_("This channel is not a lounge."))
         if lounge_room.is_private:
-            # Locked, and locked hardest of all against somebody with no
-            # identity: there is no invited set an anonymous visitor could be
-            # in, and no knock they could be recognised by afterwards.
-            raise JsonableError(_("This room is private."))
+            # A private room admits a visitor only on a knock a moderator has
+            # answered. The knock id is the whole of their claim: unguessable,
+            # good for this room alone, and spent on the way in.
+            if knock_id is None or not guest_knock_is_admitted(
+                realm_id=realm.id, room_id=lounge_room.id, knock_id=knock_id
+            ):
+                raise JsonableError(_("This room is private."))
+            # Their name came with the knock, so the person the moderator said
+            # yes to is the person who appears in the call. Taken as the finished
+            # display name rather than as raw input: it was marked when the knock
+            # was made, and marking it again would read "Sam (guest) (guest)".
+            knock = get_guest_knock(realm_id=realm.id, room_id=lounge_room.id, knock_id=knock_id)
+            if knock is not None and isinstance(knock.get("name"), str):
+                admitted_name = str(knock["name"])
+            spend_guest_knock(realm_id=realm.id, room_id=lounge_room.id, knock_id=knock_id)
         # A visitor is never a moderator, so the door policy applies to them
         # unconditionally — and applies hardest, since there is nothing they
         # could be that would exempt them.
@@ -1203,11 +1325,7 @@ def create_jitsi_call_as_guest(
     room = derive_room_name(scope, epoch)
     tenant = resolve_guest_jitsi_tenant(realm)
 
-    # Marked rather than taken at face value. The name goes to everyone in the
-    # call and nothing behind it has been verified, so a visitor who types a
-    # colleague's name gets that name and the fact that they are a guest.
-    chosen = full_name.strip()[:GUEST_NAME_MAX_LENGTH]
-    display_name = _("{name} (guest)").format(name=chosen) if chosen else _("Guest")
+    display_name = admitted_name if admitted_name is not None else guest_display_name(full_name)
 
     token = mint_jitsi_token(
         tenant=tenant,

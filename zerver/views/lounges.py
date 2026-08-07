@@ -14,12 +14,13 @@ from pydantic import Json, StringConstraints
 
 from zerver.context_processors import get_valid_realm_from_request
 from zerver.lib.exceptions import JsonableError, MissingAuthenticationError
+from zerver.lib.guest_knocks import admit_guest_knock
 from zerver.lib.lounges import (
     access_lounge_by_id,
     access_lounge_room_by_id,
     lounge_room_to_dict,
+    notify_lounge_room_knock,
     reap_unjoined_lounge_rooms,
-    room_moderator_ids,
     user_may_knock,
     user_may_start_room,
     user_moderates_room,
@@ -93,41 +94,6 @@ def create_lounge_room(
     return json_success(request, {"room": lounge_room_to_dict(room, stream=stream, user=user)})
 
 
-def notify_lounge_room_knock(stream: Stream, room: LoungeRoom, knocker: UserProfile) -> None:
-    """Tell the people who can open the door that somebody is at it.
-
-    A knock is a live request, not a record: it is delivered to whoever is
-    listening and kept nowhere. That is the same rule the room itself follows —
-    nothing about a lounge outlives the moment it describes — and it means an
-    unanswered knock simply goes unanswered rather than becoming a queue of
-    stale requests to work through later.
-
-    Addressed to the room's moderators intersected with the lounge's
-    subscribers. A realm administrator who is not in the lounge would be able to
-    admit somebody in principle, but showing them a knock for a conversation
-    they are not part of is noise, not oversight.
-    """
-    subscriber_ids = set(
-        get_active_subscriptions_for_stream_id(
-            stream.id, include_deactivated_users=False
-        ).values_list("user_profile_id", flat=True)
-    )
-    recipient_ids = sorted(room_moderator_ids(stream, room) & subscriber_ids)
-    if not recipient_ids:
-        return
-    send_event_on_commit(
-        stream.realm,
-        {
-            "type": "lounge_knock",
-            "channel_id": stream.id,
-            "room_id": room.id,
-            "room_name": room.name,
-            "user_id": knocker.id,
-        },
-        recipient_ids,
-    )
-
-
 @typed_endpoint
 def knock_on_lounge_room(
     request: HttpRequest,
@@ -149,7 +115,7 @@ def knock_on_lounge_room(
         # caller — there is nothing to ask for in the first case and nobody
         # listening in the second.
         raise JsonableError(_("You cannot ask to join this room."))
-    notify_lounge_room_knock(stream, room, user)
+    notify_lounge_room_knock(stream, room, knocker=user)
     return json_success(request)
 
 
@@ -159,23 +125,44 @@ def admit_to_lounge_room(
     user: UserProfile,
     *,
     room_id: PathOnly[int],
-    user_id: Json[int],
+    user_id: Json[int] | None = None,
+    guest_knock_id: str | None = None,
 ) -> HttpResponse:
     """Let somebody in, by widening the invited set the join path already reads.
 
-    Admitting adds nothing new to the way in: it makes the ordinary join path
-    say yes, and that path stays the only one. So there is no second answer to
-    "may this user enter" to keep in step with the first.
+    Admitting an account holder adds nothing new to the way in: it makes the
+    ordinary join path say yes, and that path stays the only one. So there is no
+    second answer to "may this user enter" to keep in step with the first.
 
     Additive rather than a PATCH of the whole set, which is what the settings
     dialog sends. Two moderators answering two knocks in the same moment would
     each be working from a list taken before the other's change, and a
     replacement would silently undo one of them.
+
+    A visitor has no account to add to that set, so their knock is marked
+    admitted instead and they come back with it. The difference is where the
+    "yes" is written down, not what it means: both end with the join path
+    letting exactly one more person in.
     """
     stream, room = access_lounge_room_by_id(user, room_id)
     if not user_moderates_room(user, stream, room):
         raise JsonableError(_("You do not have permission to change this room."))
 
+    if (user_id is None) == (guest_knock_id is None):
+        raise JsonableError(_("Specify exactly one of user_id or guest_knock_id"))
+
+    if guest_knock_id is not None:
+        if not admit_guest_knock(
+            realm_id=stream.realm_id, room_id=room.id, knock_id=guest_knock_id
+        ):
+            # The knock expired while the moderator was deciding, which is
+            # ordinary rather than exceptional: they stand for two minutes.
+            raise JsonableError(_("That request to join has expired."))
+        # No `lounge_rooms` event: nobody's room list changes. The visitor is
+        # polling for this answer, having no event queue of their own to push to.
+        return json_success(request)
+
+    assert user_id is not None
     admitted = access_user_by_id(user, user_id, allow_bots=False, for_admin=False)
     room.invited_users.add(admitted)
     # Reaches the admitted user too, whose sidebar then re-asks and finds the

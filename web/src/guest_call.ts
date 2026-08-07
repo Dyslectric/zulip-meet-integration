@@ -21,10 +21,13 @@ import * as dialog_widget from "./dialog_widget.ts";
 import {start_embedded_call} from "./embedded_call.ts";
 import * as feedback_widget from "./feedback_widget.ts";
 import {$t, $t_html} from "./i18n.ts";
+import * as lounge_rooms from "./lounge_rooms.ts";
 import {page_params} from "./page_params.ts";
 
 const call_response_schema = z.object({url: z.string()});
 const error_response_schema = z.object({msg: z.string()});
+const knock_response_schema = z.object({knock_id: z.string()});
+const knock_status_schema = z.object({admitted: z.boolean()});
 
 export function is_spectator(): boolean {
     return page_params.is_spectator;
@@ -62,7 +65,7 @@ let remembered_name = "";
 // {stream_id} for a web-public voice channel, {lounge_room_id} for a room in a
 // web-public lounge.
 export function join_as_guest(
-    target: Record<string, number>,
+    target: Record<string, number | string>,
     options: Parameters<typeof start_embedded_call>[1] = {},
 ): void {
     function mint(full_name: string): void {
@@ -83,23 +86,140 @@ export function join_as_guest(
         });
     }
 
+    ask_for_a_name({
+        title: $t_html({defaultMessage: "Join the call"}),
+        submit: $t({defaultMessage: "Join"}),
+        on_name: mint,
+    });
+}
+
+// Ask a visitor what to call them, then do the thing that needed a name.
+//
+// Shared by joining and by knocking, because the two ask the same question for
+// the same reason: there is no account to read a name off, and somebody is about
+// to be shown to other people. Knocking needs it more than joining does — a
+// moderator deciding whether to admit "Guest" has been told nothing at all.
+//
+// Blank is allowed and becomes a plain "Guest". Refusing to proceed until
+// somebody names themselves would be asking for an identity on a channel whose
+// whole point is not requiring one; a moderator is free to turn down a knock
+// that will not say who it is.
+function ask_for_a_name(opts: {
+    title: string;
+    submit: string;
+    on_name: (name: string) => void;
+}): void {
     if (remembered_name !== "") {
-        mint(remembered_name);
+        opts.on_name(remembered_name);
         return;
     }
-
     dialog_widget.launch({
-        modal_title_html: $t_html({defaultMessage: "Join the call"}),
+        modal_title_html: opts.title,
         modal_content_html: render_guest_call_name(),
         id: "guest_call_name",
-        modal_submit_button_text: $t({defaultMessage: "Join"}),
+        modal_submit_button_text: opts.submit,
         on_click() {
-            // Blank is allowed and becomes a plain "Guest". Refusing to let
-            // somebody in until they name themselves would be asking for an
-            // identity on a channel whose whole point is not requiring one.
-            mint(($<HTMLInputElement>("#guest_call_name_input").val() ?? "").trim());
+            opts.on_name(($<HTMLInputElement>("#guest_call_name_input").val() ?? "").trim());
             dialog_widget.close();
         },
         on_shown: () => $("#guest_call_name_input").trigger("focus"),
     });
+}
+
+// How often to ask whether a knock has been answered. A visitor has no event
+// queue of their own, so this is the only way they can find out; the knock
+// expires on its own well before the polling would become a nuisance.
+const KNOCK_POLL_MS = 3000;
+
+// Ask, as a visitor, to be let into a private room — and keep asking whether the
+// answer has come, since there is nowhere to push it to.
+//
+// The knock id is held only in this tab. It is the visitor's whole claim, it is
+// good for one room and one entry, and it dies with the page: a visitor who
+// reloads has to ask again, which is the same rule everybody else's knock
+// follows.
+export function knock_as_guest(
+    room_id: number,
+    options: Parameters<typeof start_embedded_call>[1] = {},
+): void {
+    ask_for_a_name({
+        title: $t_html({defaultMessage: "Ask to join"}),
+        submit: $t({defaultMessage: "Ask to join"}),
+        on_name(full_name: string): void {
+            remembered_name = full_name;
+            void channel.post({
+                url: "/json/calls/jitsi/knock_as_guest",
+                data: {lounge_room_id: room_id, full_name},
+                success(response: unknown): void {
+                    const parsed = knock_response_schema.safeParse(response);
+                    if (!parsed.success) {
+                        return;
+                    }
+                    lounge_rooms.record_own_knock(room_id);
+                    feedback_widget.show({
+                        populate($container) {
+                            $container.text(
+                                $t({
+                                    defaultMessage:
+                                        "We have asked. You will join automatically if you are let in.",
+                                }),
+                            );
+                        },
+                        title_text: $t({defaultMessage: "Waiting to be let in"}),
+                        hide_delay: 6000,
+                    });
+                    poll_for_admission(room_id, parsed.data.knock_id, options);
+                },
+                error(xhr): void {
+                    report_call_refusal(xhr);
+                },
+            });
+        },
+    });
+}
+
+function poll_for_admission(
+    room_id: number,
+    knock_id: string,
+    options: Parameters<typeof start_embedded_call>[1],
+): void {
+    const give_up_at = Date.now() + lounge_rooms.KNOCK_TTL_MS;
+
+    function ask(): void {
+        if (Date.now() > give_up_at) {
+            // The knock has expired server-side too, so there is nothing left to
+            // wait for and saying so beats waiting silently forever.
+            feedback_widget.show({
+                populate($container) {
+                    $container.text($t({defaultMessage: "Nobody answered. You can ask again."}));
+                },
+                title_text: $t({defaultMessage: "No answer"}),
+                hide_delay: 6000,
+            });
+            return;
+        }
+        void channel.get({
+            url: "/json/calls/jitsi/knock_status",
+            data: {lounge_room_id: room_id, knock_id},
+            success(response: unknown): void {
+                const parsed = knock_status_schema.safeParse(response);
+                if (!parsed.success) {
+                    return;
+                }
+                if (!parsed.data.admitted) {
+                    setTimeout(ask, KNOCK_POLL_MS);
+                    return;
+                }
+                // Admitted. Spend the knock immediately rather than making them
+                // click again: they already said they wanted in, and the id is
+                // good for one entry and a short while.
+                join_as_guest({lounge_room_id: room_id, knock_id}, options);
+            },
+            error(): void {
+                setTimeout(ask, KNOCK_POLL_MS);
+            },
+        });
+    }
+
+    setTimeout(ask, KNOCK_POLL_MS);
 }

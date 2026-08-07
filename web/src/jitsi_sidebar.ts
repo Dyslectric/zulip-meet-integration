@@ -364,12 +364,26 @@ function make_room_block(
         }
         // Beneath the people already inside, because that is where they are:
         // at the back of the room, not yet in it.
-        for (const user_id of knockers) {
-            list.append(make_knocker_row(room.id, user_id));
+        for (const knocker of knockers) {
+            list.append(make_knocker_row(room.id, knocker));
         }
         fragment.append(list);
     }
     return fragment;
+}
+
+// Whether to hide a room's controls from a visitor with no account.
+//
+// One rule for both the join and the ask controls, because it is one rule and
+// writing it twice is how they came apart: the ask stayed hidden from visitors
+// long after visitors could ask, so a locked room offered them nothing at all.
+//
+// The server already decides `can_join` and `can_knock` for whoever is asking,
+// visitors included, so this only covers a lounge that is not web-public — where
+// a visitor has no business seeing a control in the first place.
+function spectator_suffix(room: LoungeRoom): string {
+    const web_public = sub_store.get(room.channel_id)?.is_web_public === true;
+    return web_public ? "" : " hidden-for-spectators";
 }
 
 function make_room_row(room: LoungeRoom, occupancy: SidebarOccupancy | undefined): HTMLElement {
@@ -444,15 +458,7 @@ function make_room_row(room: LoungeRoom, occupancy: SidebarOccupancy | undefined
     // gesture for "put me in this call" is the same everywhere in the sidebar.
     if (room.can_join) {
         const join = document.createElement("div");
-        // Left visible to a visitor with no account when the lounge is
-        // web-public, and only then: that toggle is the decision that anyone who
-        // can see this lounge may be heard in its rooms, and hiding the way in
-        // would be the client overriding it. The server sends `can_join: false`
-        // for a private room, so no button is drawn for one anyone is refused.
-        const web_public = sub_store.get(room.channel_id)?.is_web_public === true;
-        join.className = web_public
-            ? "jitsi-lounge-room-call-button"
-            : "jitsi-lounge-room-call-button hidden-for-spectators";
+        join.className = "jitsi-lounge-room-call-button" + spectator_suffix(room);
         join.setAttribute("role", "button");
         join.setAttribute("tabindex", "0");
         join.dataset["loungeRoomId"] = String(room.id);
@@ -470,7 +476,7 @@ function make_room_row(room: LoungeRoom, occupancy: SidebarOccupancy | undefined
         // that reverted would invite exactly that.
         const asked = lounge_rooms.has_knocked(room.id);
         const knock = document.createElement("div");
-        knock.className = "jitsi-lounge-room-knock-button hidden-for-spectators";
+        knock.className = "jitsi-lounge-room-knock-button" + spectator_suffix(room);
         knock.classList.toggle("asked", asked);
         knock.setAttribute("role", "button");
         knock.setAttribute("tabindex", "0");
@@ -507,10 +513,18 @@ function waiting_for_doorman_text(channel_id: number): string {
 // lounge is for seeing who is around, and a person waiting to be let in is very
 // much around; putting them anywhere else — a toast, a modal — would interrupt
 // the moderator to say something the sidebar is already the place for.
-function make_knocker_row(room_id: number, user_id: number): HTMLElement {
-    const person = people.maybe_get_user_by_id(user_id, true);
+function make_knocker_row(room_id: number, knocker: lounge_rooms.Knocker): HTMLElement {
+    // A visitor has no avatar to draw and no id to look up, so their row falls
+    // back to the initial-letter treatment an occupant with no Zulip id already
+    // gets. The name they typed arrives marked as a guest's, so what a moderator
+    // reads is what the room would show if they say yes.
+    const label =
+        knocker.kind === "guest"
+            ? knocker.name
+            : (people.maybe_get_user_by_id(knocker.user_id, true)?.full_name ??
+              $t({defaultMessage: "Someone"}));
     const row = make_occupant_row(
-        {name: person?.full_name ?? $t({defaultMessage: "Someone"}), user_id},
+        {name: label, user_id: knocker.kind === "user" ? knocker.user_id : null},
         undefined,
     );
     row.classList.add("jitsi-lounge-knocker");
@@ -520,7 +534,12 @@ function make_knocker_row(room_id: number, user_id: number): HTMLElement {
     admit.setAttribute("role", "button");
     admit.setAttribute("tabindex", "0");
     admit.dataset["loungeRoomId"] = String(room_id);
-    admit.dataset["userId"] = String(user_id);
+    admit.dataset["knockerKey"] = knocker.key;
+    if (knocker.kind === "user") {
+        admit.dataset["userId"] = String(knocker.user_id);
+    } else {
+        admit.dataset["guestKnockId"] = knocker.knock_id;
+    }
     admit.title = $t({defaultMessage: "Admit to this room"});
     const icon = document.createElement("i");
     icon.className = "zulip-icon zulip-icon-check";

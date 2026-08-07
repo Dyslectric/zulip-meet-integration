@@ -27528,7 +27528,20 @@ paths:
                     What to call the visitor in the conference. Unverified, so it
                     is truncated and marked as a guest's; omit it for a plain
                     "Guest".
+
+                    Ignored when `knock_id` is given: the name that came with the
+                    knock is used instead, so that the person a moderator admitted
+                    is the person who appears in the call.
                   example: "Sam"
+                knock_id:
+                  type: string
+                  description: |
+                    An admitted knock from
+                    [`POST /calls/jitsi/knock_as_guest`](/api/knock-on-lounge-room-as-guest),
+                    required to join a **private** room in a web-public lounge and
+                    not needed otherwise. Spent on the way in: it admits one
+                    person once.
+                  example: "kFq3mQ9xR2vN8bYw"
                 epoch_token:
                   type: string
                   description: |
@@ -27577,6 +27590,141 @@ paths:
                         "tenant": "engineering",
                         "epoch_token": "eyJzY29wZSI6...",
                       }
+
+  /calls/jitsi/knock_as_guest:
+    post:
+      tags: ["channels"]
+      operationId: knock-on-lounge-room-as-guest
+      summary: Ask to join a lounge room as a guest
+      description: |
+        Ask, without logging in, to be let into a private room in a **web-public**
+        lounge. Only possible when the room's `knockable_by_guests` is true.
+
+        Returns a `knock_id`: an unguessable, short-lived capability that is the
+        whole of the visitor's claim afterwards. It admits exactly one person to
+        exactly one room, is spent when it is used to join, and expires on its own
+        within a couple of minutes.
+
+        Nothing about the visitor is stored beyond the name they chose and the
+        life of the knock. The name is unverified and is marked as a guest's
+        wherever it is shown, including to the moderator deciding whether to
+        admit them.
+
+        Poll [`GET /calls/jitsi/knock_status`](/api/get-guest-knock-status) for
+        the answer: a visitor holds no Zulip account and so has no event queue to
+        be pushed to.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                lounge_room_id:
+                  type: integer
+                  description: |
+                    The ID of the private room to ask about.
+                  example: 11
+                full_name:
+                  type: string
+                  description: |
+                    What to call the visitor. Shown to the moderator deciding
+                    whether to admit them, and used as their name in the call if
+                    they are. Unverified, so it is truncated and marked as a
+                    guest's; omit it for a plain "Guest".
+                  example: "Sam"
+              required:
+                - lounge_room_id
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      knock_id:
+                        type: string
+                        description: |
+                          The capability to come back with, once a moderator has
+                          admitted it.
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "knock_id": "kFq3mQ9xR2vN8bYw",
+                      }
+        "400":
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CodedError"
+                  - example:
+                      {
+                        "result": "error",
+                        "msg": "You cannot ask to join this room.",
+                        "code": "BAD_REQUEST",
+                      }
+
+  /calls/jitsi/knock_status:
+    get:
+      tags: ["channels"]
+      operationId: get-guest-knock-status
+      summary: Check whether a guest's knock has been answered
+      description: |
+        Whether a moderator has admitted this knock yet. Polled by the asking
+        client, because a visitor holds no Zulip account and so has no event queue
+        to push an answer to.
+
+        A knock id that was never real and one that has expired give the same
+        answer, so this is not a way to enumerate anything.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      parameters:
+        - name: lounge_room_id
+          in: query
+          required: true
+          description: |
+            The room the knock was made on.
+          schema:
+            type: integer
+          example: 11
+        - name: knock_id
+          in: query
+          required: true
+          description: |
+            The knock id returned when asking.
+          schema:
+            type: string
+          example: "kFq3mQ9xR2vN8bYw"
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      admitted:
+                        type: boolean
+                        description: |
+                          Whether the knock has been admitted. False also covers
+                          a knock that has expired or never existed.
+                    example: {"msg": "", "result": "success", "admitted": true}
 
   /lounges/rooms:
     get:
@@ -27817,10 +27965,24 @@ paths:
                 user_id:
                   type: integer
                   description: |
-                    The ID of the user to let in.
+                    The ID of the user to let in. Exactly one of `user_id` and
+                    `guest_knock_id` must be given.
                   example: 10
-              required:
-                - user_id
+                guest_knock_id:
+                  type: string
+                  description: |
+                    The knock of an unauthenticated visitor to let in, as
+                    returned to them by
+                    [`POST /calls/jitsi/knock_as_guest`](/api/knock-on-lounge-room-as-guest)
+                    and reported to moderators in the `lounge_knock` event.
+
+                    A visitor has no account to add to the room's invited set, so
+                    their knock is marked admitted instead and they come back with
+                    it. The difference is where the "yes" is written down, not
+                    what it means.
+
+                    Exactly one of `user_id` and `guest_knock_id` must be given.
+                  example: "kFq3mQ9xR2vN8bYw"
       responses:
         "200":
           $ref: "#/components/responses/SimpleSuccess"
@@ -31598,6 +31760,11 @@ components:
             Whether the user making the request may ask to be let in. Only ever
             true for somebody the room would otherwise refuse — there is nothing
             to ask for otherwise.
+
+            For an unauthenticated visitor this reflects `knockable_by_guests`,
+            and asking goes through
+            [`POST /calls/jitsi/knock_as_guest`](/api/knock-on-lounge-room-as-guest)
+            rather than the endpoint account holders use.
         can_administer:
           type: boolean
           description: |

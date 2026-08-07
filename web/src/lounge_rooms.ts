@@ -195,42 +195,74 @@ export function forget_room(room_id: number): void {
 // person who knocked and wandered off is not still being offered.
 export const KNOCK_TTL_MS = 2 * 60 * 1000;
 
-// room id -> knocker's user id -> when to stop showing them. Only ever populated
-// for a user who moderates the room, because the server only tells those users.
-const knocks_by_room = new Map<number, Map<number, number>>();
+// Two kinds of person can be at a door, and they are answered differently: an
+// account holder is admitted by widening the room's invited set, a visitor by
+// marking the short-lived knock they will come back with. So a knocker carries
+// which it is, and the key is namespaced to keep the two from colliding.
+export type Knocker =
+    | {key: string; kind: "user"; user_id: number; expires_at: number}
+    | {key: string; kind: "guest"; knock_id: string; name: string; expires_at: number};
+
+// room id -> key -> knocker. Only ever populated for a user who moderates the
+// room, because the server only tells those users.
+const knocks_by_room = new Map<number, Map<string, Knocker>>();
 
 // Rooms this user has knocked on, and when that knock goes quiet. Local because
 // the server keeps no record to ask: it says only that the request went out.
 const my_knocks = new Map<number, number>();
 
-export function record_knock(room_id: number, user_id: number): void {
-    const expires_at = Date.now() + KNOCK_TTL_MS;
-    const knockers = knocks_by_room.get(room_id) ?? new Map<number, number>();
-    knockers.set(user_id, expires_at);
+function remember_knock(room_id: number, knocker: Knocker): void {
+    const knockers = knocks_by_room.get(room_id) ?? new Map<string, Knocker>();
+    knockers.set(knocker.key, knocker);
     knocks_by_room.set(room_id, knockers);
     // Checked against the stored expiry rather than trusted: knocking again
     // pushes the deadline out, and the earlier timer must not then take the
     // person off the door while they are still waiting.
     setTimeout(() => {
-        if ((knocks_by_room.get(room_id)?.get(user_id) ?? 0) <= Date.now()) {
-            clear_knock(room_id, user_id);
+        if ((knocks_by_room.get(room_id)?.get(knocker.key)?.expires_at ?? 0) <= Date.now()) {
+            clear_knock(room_id, knocker.key);
         }
     }, KNOCK_TTL_MS + 500);
     on_change();
 }
 
-export function knockers_at(room_id: number): number[] {
+export function record_knock(room_id: number, user_id: number): void {
+    remember_knock(room_id, {
+        key: `user:${user_id}`,
+        kind: "user",
+        user_id,
+        expires_at: Date.now() + KNOCK_TTL_MS,
+    });
+}
+
+// A visitor, who has no id to look up: the name they typed is all there is to
+// show, and it arrives already marked as a guest's so that no client is tempted
+// to render it as though the deployment vouched for it.
+export function record_guest_knock(room_id: number, knock_id: string, name: string): void {
+    remember_knock(room_id, {
+        key: `guest:${knock_id}`,
+        kind: "guest",
+        knock_id,
+        name,
+        expires_at: Date.now() + KNOCK_TTL_MS,
+    });
+}
+
+export function knockers_at(room_id: number): Knocker[] {
     const knockers = knocks_by_room.get(room_id);
     if (knockers === undefined) {
         return [];
     }
     const now = Date.now();
-    return [...knockers].filter(([, expires_at]) => expires_at > now).map(([user_id]) => user_id);
+    return knockers
+        .values()
+        .filter((knocker) => knocker.expires_at > now)
+        .toArray();
 }
 
-export function clear_knock(room_id: number, user_id: number): void {
+export function clear_knock(room_id: number, key: string): void {
     const knockers = knocks_by_room.get(room_id);
-    if (knockers?.delete(user_id) !== true) {
+    if (knockers?.delete(key) !== true) {
         return;
     }
     if (knockers.size === 0) {
