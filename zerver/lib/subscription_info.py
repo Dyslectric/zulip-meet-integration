@@ -43,7 +43,7 @@ from zerver.lib.user_groups import (
     get_recursive_membership_groups,
 )
 from zerver.models import Realm, Stream, Subscription, UserGroup, UserProfile
-from zerver.models.streams import StreamTopicsPolicyEnum, get_all_streams
+from zerver.models.streams import CallDoorPolicyEnum, StreamTopicsPolicyEnum, get_all_streams
 
 
 def get_web_public_subs(
@@ -69,6 +69,9 @@ def get_web_public_subs(
         )
         can_administer_channel_group = get_group_setting_value_for_register_api(
             stream.can_administer_channel_group_id, anonymous_group_membership
+        )
+        can_create_rooms_group = get_group_setting_value_for_register_api(
+            stream.can_create_rooms_group_id, anonymous_group_membership
         )
         can_create_topic_group = get_group_setting_value_for_register_api(
             stream.can_create_topic_group_id, anonymous_group_membership
@@ -139,6 +142,7 @@ def get_web_public_subs(
             audible_notifications=audible_notifications,
             can_add_subscribers_group=can_add_subscribers_group,
             can_administer_channel_group=can_administer_channel_group,
+            can_create_rooms_group=can_create_rooms_group,
             can_create_topic_group=can_create_topic_group,
             can_delete_any_message_group=can_delete_any_message_group,
             can_delete_own_message_group=can_delete_own_message_group,
@@ -177,6 +181,8 @@ def get_web_public_subs(
             topics_policy=StreamTopicsPolicyEnum(topics_policy).name,
             voice_video_enabled=stream.voice_video_enabled,
             text_chat_disabled=stream.text_chat_disabled,
+            is_lounge=stream.is_lounge,
+            call_door_policy=CallDoorPolicyEnum(stream.call_door_policy).name,
             wildcard_mentions_notify=wildcard_mentions_notify,
         )
         subscribed.append(sub)
@@ -220,6 +226,9 @@ def build_stream_api_dict(
     can_administer_channel_group = get_group_setting_value_for_register_api(
         raw_stream_dict["can_administer_channel_group_id"], anonymous_group_membership
     )
+    can_create_rooms_group = get_group_setting_value_for_register_api(
+        raw_stream_dict["can_create_rooms_group_id"], anonymous_group_membership
+    )
     can_create_topic_group = get_group_setting_value_for_register_api(
         raw_stream_dict["can_create_topic_group_id"], anonymous_group_membership
     )
@@ -251,6 +260,7 @@ def build_stream_api_dict(
     return APIStreamDict(
         can_add_subscribers_group=can_add_subscribers_group,
         can_administer_channel_group=can_administer_channel_group,
+        can_create_rooms_group=can_create_rooms_group,
         can_create_topic_group=can_create_topic_group,
         can_delete_any_message_group=can_delete_any_message_group,
         can_delete_own_message_group=can_delete_own_message_group,
@@ -282,6 +292,8 @@ def build_stream_api_dict(
         topics_policy=raw_stream_dict["topics_policy"],
         voice_video_enabled=raw_stream_dict["voice_video_enabled"],
         text_chat_disabled=raw_stream_dict["text_chat_disabled"],
+        is_lounge=raw_stream_dict["is_lounge"],
+        call_door_policy=raw_stream_dict["call_door_policy"],
     )
 
 
@@ -293,6 +305,7 @@ def build_stream_dict_for_sub(
     # Handle Stream.API_FIELDS
     can_add_subscribers_group = stream_dict["can_add_subscribers_group"]
     can_administer_channel_group = stream_dict["can_administer_channel_group"]
+    can_create_rooms_group = stream_dict["can_create_rooms_group"]
     can_create_topic_group = stream_dict["can_create_topic_group"]
     can_delete_any_message_group = stream_dict["can_delete_any_message_group"]
     can_delete_own_message_group = stream_dict["can_delete_own_message_group"]
@@ -324,6 +337,8 @@ def build_stream_dict_for_sub(
     topics_policy = stream_dict["topics_policy"]
     voice_video_enabled = stream_dict["voice_video_enabled"]
     text_chat_disabled = stream_dict["text_chat_disabled"]
+    is_lounge = stream_dict["is_lounge"]
+    call_door_policy = stream_dict["call_door_policy"]
 
     # Handle Subscription.API_FIELDS.
     color = sub_dict["color"]
@@ -344,6 +359,7 @@ def build_stream_dict_for_sub(
         audible_notifications=audible_notifications,
         can_add_subscribers_group=can_add_subscribers_group,
         can_administer_channel_group=can_administer_channel_group,
+        can_create_rooms_group=can_create_rooms_group,
         can_create_topic_group=can_create_topic_group,
         can_delete_any_message_group=can_delete_any_message_group,
         can_delete_own_message_group=can_delete_own_message_group,
@@ -382,6 +398,8 @@ def build_stream_dict_for_sub(
         topics_policy=topics_policy,
         voice_video_enabled=voice_video_enabled,
         text_chat_disabled=text_chat_disabled,
+        is_lounge=is_lounge,
+        call_door_policy=call_door_policy,
         wildcard_mentions_notify=wildcard_mentions_notify,
     )
 
@@ -411,6 +429,8 @@ def build_stream_dict_for_never_sub(
     topics_policy = raw_stream_dict["topics_policy"]
     voice_video_enabled = raw_stream_dict["voice_video_enabled"]
     text_chat_disabled = raw_stream_dict["text_chat_disabled"]
+    is_lounge = raw_stream_dict["is_lounge"]
+    call_door_policy = raw_stream_dict["call_door_policy"]
 
     if recent_traffic is not None:
         stream_weekly_traffic = get_average_weekly_stream_traffic(
@@ -424,6 +444,9 @@ def build_stream_dict_for_never_sub(
     )
     can_administer_channel_group_value = get_group_setting_value_for_register_api(
         raw_stream_dict["can_administer_channel_group_id"], anonymous_group_membership
+    )
+    can_create_rooms_group = get_group_setting_value_for_register_api(
+        raw_stream_dict["can_create_rooms_group_id"], anonymous_group_membership
     )
     can_create_topic_group = get_group_setting_value_for_register_api(
         raw_stream_dict["can_create_topic_group_id"], anonymous_group_membership
@@ -460,6 +483,7 @@ def build_stream_dict_for_never_sub(
     return NeverSubscribedStreamDict(
         can_add_subscribers_group=can_add_subscribers_group_value,
         can_administer_channel_group=can_administer_channel_group_value,
+        can_create_rooms_group=can_create_rooms_group,
         can_create_topic_group=can_create_topic_group,
         can_delete_any_message_group=can_delete_any_message_group_value,
         can_delete_own_message_group=can_delete_own_message_group_value,
@@ -491,6 +515,8 @@ def build_stream_dict_for_never_sub(
         topics_policy=topics_policy,
         voice_video_enabled=voice_video_enabled,
         text_chat_disabled=text_chat_disabled,
+        is_lounge=is_lounge,
+        call_door_policy=call_door_policy,
     )
 
 
@@ -850,6 +876,11 @@ def gather_subscriptions_helper(
         all_streams_map[stream.id]["stream_post_policy"] = stream_post_policy
         all_streams_map[stream.id]["topics_policy"] = StreamTopicsPolicyEnum(
             stream.topics_policy
+        ).name
+        # Both enums cross the wire as their names, so both are converted here,
+        # where raw `.values()` rows become what the API actually describes.
+        all_streams_map[stream.id]["call_door_policy"] = CallDoorPolicyEnum(
+            stream.call_door_policy
         ).name
 
     if anonymous_group_membership is None:

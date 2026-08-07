@@ -1,0 +1,16 @@
+<div class="lounge-room-name-container">
+    <label for="new_lounge_room_name" class="modal-field-label">
+        {{t 'Room name' }}
+    </label>
+    <input type="text" id="new_lounge_room_name" class="modal_text_input" name="lounge_room_name" maxlength="60" />
+</div>
+<div class="settings-checkbox-wrapper">
+    <label class="checkbox">
+        <input type="checkbox" id="new_lounge_room_private" class="inline-block" />
+        <span class="rendered-checkbox"></span>
+    </label>
+    {{! Visible but locked: everyone in the lounge still sees the room and who is
+    in it, because a lounge is there to show you who is around. Only getting in
+    is restricted. }}
+    <label for="new_lounge_room_private" class="inline">{{t "Only let people I admit join" }}</label>
+</div>

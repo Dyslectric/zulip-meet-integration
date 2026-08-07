@@ -69,7 +69,15 @@ from zerver.views.invite import (
     revoke_multiuse_invite,
     revoke_user_invite,
 )
+from zerver.views.jitsi_hook import jitsi_hook_occupancy, jitsi_hook_send, jitsi_hook_update
 from zerver.views.llms_txt import llms_txt
+from zerver.views.lounges import (
+    admit_to_lounge_room,
+    create_lounge_room,
+    get_lounge_rooms,
+    knock_on_lounge_room,
+    update_lounge_room,
+)
 from zerver.views.message_edit import (
     delete_message_backend,
     get_message_edit_history,
@@ -269,16 +277,16 @@ from zerver.views.users import (
     update_user_by_email_api,
     update_user_by_id_api,
 )
-from zerver.views.jitsi_hook import jitsi_hook_occupancy, jitsi_hook_send, jitsi_hook_update
 from zerver.views.video_calls import (
     complete_webex_user,
     complete_zoom_user,
     create_jitsi_call,
-    get_jitsi_occupancy,
-    get_jitsi_occupancy_all,
+    create_jitsi_call_as_guest,
     create_nextcloud_talk_url,
     deauthorize_zoom_user,
     get_bigbluebutton_url,
+    get_jitsi_occupancy,
+    get_jitsi_occupancy_all,
     join_bigbluebutton,
     make_constructor_groups_video_call,
     make_webex_video_call,
@@ -621,8 +629,21 @@ v1_api_and_json_patterns = [
     # Used to generate a Nextcloud Talk video call URL
     rest_path("calls/nextcloud_talk/create", POST=create_nextcloud_talk_url),
     rest_path("calls/jitsi/create", POST=create_jitsi_call),
+    rest_path(
+        "calls/jitsi/create_as_guest",
+        POST=(create_jitsi_call_as_guest, {"allow_anonymous_user_web"}),
+    ),
     rest_path("calls/jitsi/occupancy", GET=get_jitsi_occupancy),
-    rest_path("calls/jitsi/occupancy_all", GET=get_jitsi_occupancy_all),
+    rest_path(
+        "calls/jitsi/occupancy_all",
+        GET=(get_jitsi_occupancy_all, {"allow_anonymous_user_web"}),
+    ),
+    # lounges -> zerver.views.lounges
+    rest_path("lounges/rooms", GET=(get_lounge_rooms, {"allow_anonymous_user_web"})),
+    rest_path("lounges/rooms/<int:room_id>", PATCH=update_lounge_room),
+    rest_path("lounges/rooms/<int:room_id>/knock", POST=knock_on_lounge_room),
+    rest_path("lounges/rooms/<int:room_id>/admit", POST=admit_to_lounge_room),
+    rest_path("lounges/<int:stream_id>/rooms", POST=create_lounge_room),
     # export/realm -> zerver.views.realm_export
     rest_path("export/realm", POST=export_realm, GET=get_realm_exports),
     rest_path("export/realm/<int:export_id>", DELETE=delete_realm_export),

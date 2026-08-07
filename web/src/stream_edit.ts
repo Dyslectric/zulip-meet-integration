@@ -496,6 +496,7 @@ export function show_settings_for(node: HTMLElement): void {
         notification_settings,
         other_settings,
         stream_topics_policy_values: settings_config.get_stream_topics_policy_values(),
+        call_door_policy_values: settings_config.get_call_door_policy_values(),
         check_default_stream: stream_data.is_default_stream_id(stream_id),
         zulip_plan_is_not_limited: realm.zulip_plan_is_not_limited,
         upgrade_text_for_wide_organization_logo: realm.upgrade_text_for_wide_organization_logo,
@@ -519,6 +520,11 @@ export function show_settings_for(node: HTMLElement): void {
     $("#subscription_overlay .stream_change_property_info").hide();
     $("#subscription_overlay .channel-general-settings-status").hide();
     $("#id_topics_policy").val(sub.topics_policy);
+    // Both selects are rendered without a `selected` option, so the current
+    // value has to be put in afterwards; without this the control opens showing
+    // the first option and would silently save that if anything else on the
+    // subsection were changed.
+    $("#id_call_door_policy").val(sub.call_door_policy);
 
     $edit_container.addClass("show");
 
@@ -818,28 +824,49 @@ export function initialize(): void {
             .trigger("change");
     });
 
-    // A voice channel is either single-threaded or has no text chat at all, so
-    // marking one pins it single-threaded and reveals the switch between those
-    // two. Unmarking it releases the topics policy and restores text chat, which
-    // the server enforces regardless of this.
-    $("#channels_overlay_container").on("change", ".voice_video_enabled", (e) => {
-        const $checkbox = $(e.currentTarget);
-        const voice_on = $checkbox.is(":checked");
-        const $section = $checkbox.closest(".settings-subsection-parent");
+    // Only a text channel has topics: a voice channel is a single thread beside
+    // its room, and a lounge keeps its conversations in rooms instead. Choosing
+    // either of those therefore pins the channel single-threaded and locks the
+    // topics controls, which the server enforces regardless of this.
+    //
+    // The switch between single-threaded text and no text at all belongs to a
+    // voice channel alone, so it appears with that kind and hides with the rest:
+    // a lounge stores no text to begin with, and there is nothing to switch off.
+    $("#channels_overlay_container").on("change", "select[name='channel-kind-setting']", (e) => {
+        assert(e.currentTarget instanceof HTMLSelectElement);
+        const kind = e.currentTarget.value;
+        const $section = $(e.currentTarget).closest(".settings-subsection-parent");
+        const has_topics = kind === "text";
 
-        $section.find(".text-chat-disabled-setting").toggleClass("hide", !voice_on);
-        if (!voice_on) {
+        $section.find(".text-chat-disabled-setting").toggleClass("hide", kind !== "voice");
+        if (kind !== "voice") {
             $section.find(".text_chat_disabled").prop("checked", false).trigger("change");
         }
 
+        // A door policy only makes sense where there are calls to have one
+        // about, and is reset along with them. Reset as well as hidden, because
+        // the server resets it too: a policy left selected out of sight would
+        // promise something that is not being saved.
+        $section.find(".call-door-policy-setting").toggleClass("hide", has_topics);
+        if (has_topics) {
+            $section
+                .find("select[name='call-door-policy-setting']")
+                .val("anarchy")
+                .trigger("change");
+        }
+
+        // Only a lounge has rooms to start. Hidden rather than cleared: unlike
+        // the two above, the server keeps this group value on a channel that
+        // stops being a lounge, so blanking the widget here would discard a
+        // setting the save is not going to change.
+        $section.find(".create-rooms-group-setting").toggleClass("hide", kind !== "lounge");
+
         const $single_threaded = $section.find(".single-threaded-channel-toggle");
-        if (voice_on && !$single_threaded.is(":checked")) {
+        if (!has_topics && !$single_threaded.is(":checked")) {
             $single_threaded.prop("checked", true).trigger("change");
         }
-        $single_threaded.prop("disabled", voice_on);
-        $section
-            .find("select[name='stream-topics-policy-setting']")
-            .prop("disabled", voice_on);
+        $single_threaded.prop("disabled", !has_topics);
+        $section.find("select[name='stream-topics-policy-setting']").prop("disabled", !has_topics);
     });
 
     // Keep the checkbox honest if the dropdown itself is changed.

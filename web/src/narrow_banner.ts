@@ -401,6 +401,17 @@ export function pick_empty_narrow_banner(
                 // You are narrowed to a channel that either does not exist,
                 // is private, or a channel you're not currently subscribed to.
                 if (page_params.is_spectator) {
+                    // A visitor is never subscribed to anything, so "not
+                    // subscribed" says nothing about whether they are allowed
+                    // to be here. On a web-public channel they are: it is open
+                    // to them, and an empty one is simply empty. Asking them to
+                    // log in at that point demands an account to see what they
+                    // are already looking at -- and on a voice channel or a
+                    // lounge, which hold no messages to begin with, it fires
+                    // every single time the channel is opened.
+                    if (stream_sub?.is_web_public) {
+                        return default_banner;
+                    }
                     spectators.login_to_access(true);
                     return SPECTATOR_STREAM_NARROW_BANNER;
                 }

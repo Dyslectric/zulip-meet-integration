@@ -55,6 +55,7 @@ import logging
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.utils.timezone import now as timezone_now
 from django.views.decorators.csrf import csrf_exempt
 
 from zerver.actions.message_edit import build_message_edit_request, do_update_message
@@ -64,10 +65,11 @@ from zerver.actions.message_send import (
     internal_send_stream_message,
     render_incoming_message,
 )
+from zerver.lib.call_presence import record_call_occupants
 from zerver.lib.mention import MentionBackend, MentionData
 from zerver.lib.response import json_success
 from zerver.lib.stream_subscription import get_active_subscriptions_for_stream_id
-from zerver.models import Message, Realm, Stream, UserProfile
+from zerver.models import LoungeRoom, Message, Realm, Stream, UserProfile
 from zerver.models.users import get_system_bot
 from zerver.tornado.django_api import send_event_on_commit
 
@@ -138,9 +140,7 @@ def _send_direct_message(
         return internal_send_private_message(initiator, recipient, content)
 
     recipients = list(UserProfile.objects.filter(id__in=full, realm=realm))
-    return internal_send_group_direct_message(
-        realm, initiator, content, recipient_users=recipients
-    )
+    return internal_send_group_direct_message(realm, initiator, content, recipient_users=recipients)
 
 
 @csrf_exempt
@@ -336,6 +336,55 @@ def jitsi_hook_occupancy(request: HttpRequest) -> HttpResponse:
             ).values_list("user_profile_id", flat=True)
         )
         event["stream_id"] = stream.id
+
+        # Written down so the door policy has something to consult. This report
+        # is the only account Zulip gets of who is in a call, and
+        # `call_door_policy` has to answer "who is in there" at the moment a
+        # token is minted, where a round trip to ask the service would be a new
+        # way for joining to fail. Deliberately a pure write of the raw ids: who
+        # counts as a moderator takes queries, and that work belongs at the mint,
+        # which happens far less often than this does. Keeping only the integer
+        # ids is also what makes an anonymous visitor invisible here, which is
+        # exactly right — a visitor can never be the one holding a door open.
+        record_call_occupants(
+            realm_id=realm.id,
+            stream_id=stream.id,
+            lounge_room_id=(
+                data["lounge_room_id"] if isinstance(data.get("lounge_room_id"), int) else None
+            ),
+            active=bool(data.get("active", True)),
+            user_ids=[
+                occupant["user_id"]
+                for occupant in event["occupants"]
+                if isinstance(occupant, dict) and isinstance(occupant.get("user_id"), int)
+            ],
+        )
+
+        # A room inside a lounge, rather than the channel's own call. This report
+        # is the room's whole lifecycle: a room lasts exactly as long as somebody
+        # is in it, and this is the only place that learns when that stops being
+        # true. Emptying it deletes the row, which is what makes an idle lounge
+        # empty rather than a list of rooms with nobody in them.
+        lounge_room_id = data.get("lounge_room_id")
+        if isinstance(lounge_room_id, int):
+            event["lounge_room_id"] = lounge_room_id
+            active = bool(data.get("active", True))
+            count = int(data.get("count", 0))
+            if not active:
+                # The room is over. `active` is what says so, NOT an empty
+                # roster: a room that has been started and not yet entered is
+                # legitimately empty, and so is one for the moment between the
+                # last person leaving and the next arriving. Ending on a count of
+                # zero kills a room seconds after somebody starts it, before they
+                # have finished walking through the door.
+                LoungeRoom.objects.filter(id=lounge_room_id, channel=stream).delete()
+            elif count > 0:
+                # Records that the room really was entered, which is what
+                # separates it from one started and abandoned. Those are reaped
+                # on a timer instead, having no report like this one coming.
+                LoungeRoom.objects.filter(
+                    id=lounge_room_id, channel=stream, first_joined_at=None
+                ).update(first_joined_at=timezone_now())
     else:
         # A DM/group call: its participants are the only people entitled to know
         # about it, so they are exactly who the event goes to -- and only those

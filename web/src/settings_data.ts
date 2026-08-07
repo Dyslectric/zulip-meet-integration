@@ -417,6 +417,29 @@ export function get_request_data_for_stream_privacy(selected_val: string): {
     }
 }
 
+// The channel-kind dropdown is one control over two API fields, so both go out
+// on every change rather than only the one that turned on. Leaving the other out
+// would let a channel be two kinds at once on the way through: the server reads
+// an absent field as "leave it alone", so switching a voice channel to a lounge
+// without also sending voice_video_enabled=false would ask it for both.
+export function get_request_data_for_channel_kind(selected_val: string): {
+    voice_video_enabled: boolean;
+    is_lounge: boolean;
+} {
+    switch (selected_val) {
+        case "text":
+        case "voice":
+        case "lounge": {
+            return {
+                voice_video_enabled: selected_val === "voice",
+                is_lounge: selected_val === "lounge",
+            };
+        }
+        default:
+            throw new Error("Invalid value for channel kind: " + selected_val);
+    }
+}
+
 export function guests_can_access_all_other_users(): boolean {
     const everyone_group = user_groups.get_user_group_from_id(
         realm.realm_can_access_all_users_group,

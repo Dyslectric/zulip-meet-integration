@@ -12,8 +12,13 @@
             <span class="stream-name">{{name}}</span>
 
             <div class="left-sidebar-controls">
+                {{! Left visible to unauthenticated visitors on a web-public
+                channel, and only there. Making a channel web-public is the
+                decision that anyone who can see it may be heard in it, so hiding
+                the way in would be the client overriding that decision. A
+                visitor clicking this gets a guest token, not this one. }}
                 {{#if voice_video_enabled}}
-                <div class="jitsi-sidebar-call-button hidden-for-spectators" tabindex="0" role="button" data-tippy-content="{{t 'Start or join a call' }}" data-stream-id="{{id}}">
+                <div class="jitsi-sidebar-call-button{{#unless is_web_public}} hidden-for-spectators{{/unless}}" tabindex="0" role="button" data-tippy-content="{{t 'Start or join a call' }}" data-stream-id="{{id}}">
                     <i class="zulip-icon zulip-icon-voice-call" aria-hidden="true"></i>
                 </div>
                 {{/if}}
@@ -24,6 +29,15 @@
                 {{/unless}}
                 {{#if can_post_messages}}
                 <div class="channel-new-topic-button hidden-for-spectators auto-hide-left-sidebar-overlay" tabindex="0"  data-tippy-content="{{#if (or is_empty_topic_only_channel cannot_create_topics_in_channel)}}{{t 'New message'}}{{else}}{{t 'Start a new topic'}}{{/if}}" data-stream-id="{{id}}">
+                    <i class="channel-new-topic-icon zulip-icon zulip-icon-square-plus" aria-hidden="true"></i>
+                </div>
+                {{/if}}
+                {{! A lounge's equivalent of starting a topic. It sits on the row
+                rather than inside the expanded list so that starting a room does
+                not require opening the lounge first, and so the gesture is the
+                one people already know from every other channel. }}
+                {{#if is_lounge}}
+                <div class="channel-new-room-button hidden-for-spectators auto-hide-left-sidebar-overlay" tabindex="0" role="button" data-tippy-content="{{t 'Create a room' }}" data-stream-id="{{id}}">
                     <i class="channel-new-topic-icon zulip-icon zulip-icon-square-plus" aria-hidden="true"></i>
                 </div>
                 {{/if}}

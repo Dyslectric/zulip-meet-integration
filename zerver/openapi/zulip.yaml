@@ -13241,6 +13241,8 @@ paths:
                   $ref: "#/components/schemas/CanResolveTopicsGroup"
                 can_create_topic_group:
                   $ref: "#/components/schemas/CanCreateTopicGroup"
+                can_create_rooms_group:
+                  $ref: "#/components/schemas/CanCreateRoomsGroup"
                 folder_id:
                   description: |
                     This parameter adds the newly created channel to the specified
@@ -13251,6 +13253,40 @@ paths:
                   example: 1
                 send_new_subscription_messages:
                   $ref: "#/components/schemas/SendNewSubscriptionMessages"
+                voice_video_enabled:
+                  description: |
+                    Whether the new channel is a voice channel.
+
+                    Calls exist only on voice channels. Creating one pins the
+                    channel single-threaded. Refused on a web-public channel,
+                    which cannot have calls.
+
+                    **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+                  type: boolean
+                  example: false
+                text_chat_disabled:
+                  description: |
+                    Whether the new channel carries no text conversation at
+                    all.
+
+                    Only accepted on a voice channel, where it is the
+                    alternative to being single-threaded.
+
+                    **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+                  type: boolean
+                  example: false
+                is_lounge:
+                  description: |
+                    Whether the new channel is a lounge, whose conversations
+                    are ephemeral rooms rather than topics.
+
+                    Mutually exclusive with `voice_video_enabled`; asking for
+                    both is refused, as is asking for either on a web-public
+                    channel.
+
+                    **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+                  type: boolean
+                  example: false
               required:
                 - subscriptions
             encoding:
@@ -13295,6 +13331,8 @@ paths:
               can_resolve_topics_group:
                 contentType: application/json
               can_create_topic_group:
+                contentType: application/json
+              can_create_rooms_group:
                 contentType: application/json
               folder_id:
                 contentType: application/json
@@ -19199,6 +19237,8 @@ paths:
                                 topics_policy: {}
                                 voice_video_enabled: {}
                                 text_chat_disabled: {}
+                                is_lounge: {}
+                                call_door_policy: {}
                                 first_message_id:
                                   nullable: true
                                 folder_id:
@@ -19216,6 +19256,7 @@ paths:
                                 can_subscribe_group: {}
                                 can_resolve_topics_group: {}
                                 can_create_topic_group: {}
+                                can_create_rooms_group: {}
                                 subscriber_count: {}
                                 stream_weekly_traffic:
                                   type: integer
@@ -24270,6 +24311,8 @@ paths:
                                 topics_policy: {}
                                 voice_video_enabled: {}
                                 text_chat_disabled: {}
+                                is_lounge: {}
+                                call_door_policy: {}
                                 first_message_id:
                                   nullable: true
                                 folder_id:
@@ -24287,6 +24330,7 @@ paths:
                                 can_resolve_topics_group: {}
                                 can_subscribe_group: {}
                                 can_create_topic_group: {}
+                                can_create_rooms_group: {}
                                 subscriber_count: {}
                                 stream_weekly_traffic:
                                   type: integer
@@ -24647,6 +24691,47 @@ paths:
                     otherwise, and clears it when a channel stops being one.
                   type: boolean
                   example: false
+                is_lounge:
+                  description: |
+                    Whether this channel is a lounge, whose conversations are
+                    ephemeral rooms rather than topics.
+
+                    Mutually exclusive with `voice_video_enabled`; asking for
+                    both in one request is refused. Marking a channel as one
+                    pins it single-threaded and clears
+                    `voice_video_enabled`.
+                  type: boolean
+                  example: false
+                call_door_policy:
+                  description: |
+                    Who must already be in a call here before anyone else may
+                    come in.
+
+                    - `anarchy`: nobody need be. Anyone who can reach the channel
+                      may join its call whenever they like, including an
+                      anonymous visitor on a web-public one.
+                    - `moderator`: somebody who moderates the call must be in it.
+                    - `authenticated_user`: somebody with a Zulip account must be
+                      in it. Aimed at web-public channels, where it lets visitors
+                      join a conversation members are having but not hold one
+                      among themselves.
+
+                    A rule about the door, not about the room: it is checked when
+                    somebody asks to come in, and people already talking are
+                    never disconnected when the doorman leaves. Whoever holds the
+                    door open is never refused by it.
+
+                    Only accepted with a value other than `anarchy` on a voice
+                    channel or a lounge; the server refuses it otherwise, and
+                    resets it to `anarchy` when a channel stops being either.
+
+                    **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+                  type: string
+                  enum:
+                    - anarchy
+                    - moderator
+                    - authenticated_user
+                  example: "moderator"
                 can_add_subscribers_group:
                   allOf:
                     - description: |
@@ -24894,6 +24979,24 @@ paths:
                           "old": 15,
                         }
                     - $ref: "#/components/schemas/GroupSettingValueUpdate"
+                can_create_rooms_group:
+                  allOf:
+                    - description: |
+                        The set of users who have permission to start a room in this
+                        lounge, expressed as an [update to a group-setting
+                        value][update-group-setting].
+
+                        Deliberately separate from who may subscribe to the lounge.
+                        Only meaningful on a lounge.
+
+                        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+                      example:
+                        {
+                          "new":
+                            {"direct_members": [10], "direct_subgroups": [11]},
+                          "old": 15,
+                        }
+                    - $ref: "#/components/schemas/GroupSettingValueUpdate"
                 can_resolve_topics_group:
                   allOf:
                     - description: |
@@ -24970,6 +25073,8 @@ paths:
               can_resolve_topics_group:
                 contentType: application/json
               can_create_topic_group:
+                contentType: application/json
+              can_create_rooms_group:
                 contentType: application/json
       responses:
         "200":
@@ -25531,6 +25636,8 @@ paths:
                   $ref: "#/components/schemas/ChannelCanAddSubscribersGroup"
                 can_create_topic_group:
                   $ref: "#/components/schemas/CanCreateTopicGroup"
+                can_create_rooms_group:
+                  $ref: "#/components/schemas/CanCreateRoomsGroup"
                 can_delete_any_message_group:
                   $ref: "#/components/schemas/CanDeleteAnyMessageGroup"
                 can_delete_own_message_group:
@@ -25562,6 +25669,8 @@ paths:
               can_add_subscribers_group:
                 contentType: application/json
               can_create_topic_group:
+                contentType: application/json
+              can_create_rooms_group:
                 contentType: application/json
               can_administer_channel_group:
                 contentType: application/json
@@ -27289,7 +27398,8 @@ paths:
                   type: integer
                   description: |
                     The ID of the channel the call belongs to. Exactly one of
-                    `stream_id` and `user_ids` must be specified.
+                    `stream_id`, `user_ids` and `lounge_room_id` must be
+                    specified.
                   example: 7
                 user_ids:
                   type: array
@@ -27297,9 +27407,21 @@ paths:
                     type: integer
                   description: |
                     The IDs of the other participants in a direct message
-                    conversation. Exactly one of `stream_id` and `user_ids`
-                    must be specified.
+                    conversation. Exactly one of `stream_id`, `user_ids` and
+                    `lounge_room_id` must be specified.
                   example: [9, 10]
+                lounge_room_id:
+                  type: integer
+                  description: |
+                    The ID of a room inside a lounge. The caller must be
+                    subscribed to the lounge, and the room must either be public
+                    or one they moderate.
+
+                    Exactly one of `stream_id`, `user_ids` and `lounge_room_id`
+                    must be specified.
+
+                    **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+                  example: 11
                 epoch_token:
                   type: string
                   description: |
@@ -27357,6 +27479,431 @@ paths:
                         "room": "c-6fe01c2e8f27d6f5",
                         "tenant": "engineering",
                         "epoch_token": "eyJzY29wZSI6...",
+                      }
+
+  /calls/jitsi/create_as_guest:
+    post:
+      tags: ["channels"]
+      operationId: create-jitsi-video-call-as-guest
+      summary: Create a Jitsi Meet video call as a guest
+      description: |
+        Get a Jitsi Meet call URL for a **web-public** channel or lounge room,
+        without logging in. This is the endpoint an unauthenticated visitor
+        reading a web-public channel uses to join its call.
+
+        The token it mints is strictly weaker than the one
+        [`POST /calls/jitsi/create`](/api/create-jitsi-video-call) issues: the
+        joining identity is generated fresh each time and cannot collide with a
+        Zulip user ID, it never carries a moderator claim, and it is good for one
+        room and a short time. A display name supplied here is unverified and is
+        marked as a guest's when it is shown.
+
+        Only ever succeeds for a channel that is web-public and, for a room,
+        one that is not private — there is no invited set an anonymous visitor
+        could be in.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                stream_id:
+                  type: integer
+                  description: |
+                    The ID of the web-public channel whose call to join. Exactly
+                    one of `stream_id` and `lounge_room_id` must be specified.
+                  example: 7
+                lounge_room_id:
+                  type: integer
+                  description: |
+                    The ID of a public room inside a web-public lounge. Exactly
+                    one of `stream_id` and `lounge_room_id` must be specified.
+                  example: 11
+                full_name:
+                  type: string
+                  description: |
+                    What to call the visitor in the conference. Unverified, so it
+                    is truncated and marked as a guest's; omit it for a plain
+                    "Guest".
+                  example: "Sam"
+                epoch_token:
+                  type: string
+                  description: |
+                    A signed token identifying which room the conversation is
+                    currently using, if the visitor's link carried one. Omit it
+                    to use the conversation's first room.
+                  example: "3:1kFnQx:qFB0y7oQ0zJ8Zx1n1kUvJ5x1t0o"
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      url:
+                        description: |
+                          The URL to join the call, carrying a guest token scoped
+                          to this room and valid for a short time.
+                        type: string
+                      room:
+                        description: |
+                          The derived room name.
+                        type: string
+                      tenant:
+                        description: |
+                          The Jitsi tenant the room lives under.
+                        type: string
+                      epoch_token:
+                        description: |
+                          A signed token identifying the room this conversation
+                          is currently using, to be passed back on later
+                          requests.
+                        type: string
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "url": "https://jitsi.example.com/engineering/c-6fe01c2e8f27d6f5?jwt=eyJhbGciOiJIUzI1NiJ9...",
+                        "room": "c-6fe01c2e8f27d6f5",
+                        "tenant": "engineering",
+                        "epoch_token": "eyJzY29wZSI6...",
+                      }
+
+  /lounges/rooms:
+    get:
+      tags: ["channels"]
+      operationId: get-lounge-rooms
+      summary: Get lounge rooms
+      description: |
+        The live rooms in the lounges this user is subscribed to.
+
+        A lounge is a channel whose conversations are ephemeral rooms rather
+        than topics. A room exists only while somebody is in it, so this
+        endpoint describes the present moment and nothing else: there is no
+        history of rooms that have ended, and an idle lounge returns none.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      parameters:
+        - name: stream_id
+          in: query
+          description: |
+            Limit the response to a single lounge. Omit it for every lounge the
+            user is subscribed to.
+          schema:
+            type: integer
+          example: 7
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      rooms:
+                        type: array
+                        description: |
+                          The live rooms, oldest first.
+                        items:
+                          $ref: "#/components/schemas/LoungeRoom"
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "rooms":
+                          [
+                            {
+                              "id": 11,
+                              "channel_id": 7,
+                              "name": "Design sync",
+                              "creator_id": 10,
+                              "is_private": false,
+                              "can_join": true,
+                            },
+                          ],
+                      }
+  /lounges/rooms/{room_id}:
+    patch:
+      tags: ["channels"]
+      operationId: update-lounge-room
+      summary: Update a lounge room
+      description: |
+        Change a room's door policy while it is running. Only a user whose
+        `can_administer` is true for the room may do this.
+
+        None of these settings ejects anybody. Locking a room, or dropping
+        someone from the invited set, changes who may come in from now on and
+        leaves the people already talking where they are.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: |
+            The ID of the room to update.
+          schema:
+            type: integer
+          example: 11
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                is_private:
+                  type: boolean
+                  description: |
+                    Whether the room is locked. A private room is still listed to
+                    everyone who can see the lounge, along with who is in it;
+                    only joining it is restricted.
+                  example: true
+                knockable_by_users:
+                  type: boolean
+                  description: |
+                    Whether members of the organization who are refused entry may
+                    ask to be let in.
+                  example: true
+                knockable_by_guests:
+                  type: boolean
+                  description: |
+                    Whether users with guest accounts who are refused entry may
+                    ask to be let in.
+                  example: false
+                invited_user_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: |
+                    The users allowed into this private room individually.
+                    Replaces the set rather than adding to it; omit the parameter
+                    to leave it alone.
+
+                    Being invited is not by itself a way into the lounge: joining
+                    still requires a subscription to it, and an invitation only
+                    unlocks the room for somebody who could already reach it.
+                  example: [10, 11]
+            encoding:
+              invited_user_ids:
+                contentType: application/json
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      room:
+                        $ref: "#/components/schemas/LoungeRoom"
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "room":
+                          {
+                            "id": 11,
+                            "channel_id": 7,
+                            "name": "Design sync",
+                            "creator_id": 10,
+                            "is_private": true,
+                            "can_join": true,
+                            "can_knock": false,
+                            "can_administer": true,
+                            "knockable_by_users": true,
+                            "knockable_by_guests": false,
+                            "invited_user_ids": [10, 11],
+                          },
+                      }
+
+  /lounges/rooms/{room_id}/knock:
+    post:
+      tags: ["channels"]
+      operationId: knock-on-lounge-room
+      summary: Ask to join a lounge room
+      description: |
+        Ask to be let into a private room. Only possible when the room's
+        `can_knock` is true for this user, which is only ever the case for
+        somebody the room would otherwise refuse.
+
+        Nothing is stored. The request reaches whichever of the room's
+        moderators are listening and is then over: an unanswered knock goes
+        unanswered rather than becoming a queue, and knocking again is how to
+        try again.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: |
+            The ID of the room to ask to join.
+          schema:
+            type: integer
+          example: 11
+      responses:
+        "200":
+          $ref: "#/components/responses/SimpleSuccess"
+        "400":
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CodedError"
+                  - example:
+                      {
+                        "result": "error",
+                        "msg": "You cannot ask to join this room.",
+                        "code": "BAD_REQUEST",
+                      }
+
+  /lounges/rooms/{room_id}/admit:
+    post:
+      tags: ["channels"]
+      operationId: admit-to-lounge-room
+      summary: Admit a user to a lounge room
+      description: |
+        Let a user into a private room, by adding them to its invited set. Only
+        a user whose `can_administer` is true for the room may do this.
+
+        This adds nothing new to the way in: it makes the ordinary join path say
+        yes, and that path stays the only one. Being admitted does not by itself
+        get the user into the lounge — joining still requires a subscription to
+        it.
+
+        Unlike `invited_user_ids` on
+        [`PATCH /lounges/rooms/{room_id}`](/api/update-lounge-room), this adds to
+        the invited set rather than replacing it, so two moderators answering two
+        knocks at once cannot undo each other.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: |
+            The ID of the room to admit the user to.
+          schema:
+            type: integer
+          example: 11
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                  description: |
+                    The ID of the user to let in.
+                  example: 10
+              required:
+                - user_id
+      responses:
+        "200":
+          $ref: "#/components/responses/SimpleSuccess"
+        "400":
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CodedError"
+                  - example:
+                      {
+                        "result": "error",
+                        "msg": "You do not have permission to change this room.",
+                        "code": "BAD_REQUEST",
+                      }
+
+  /lounges/{stream_id}/rooms:
+    post:
+      tags: ["channels"]
+      operationId: create-lounge-room
+      summary: Start a lounge room
+      description: |
+        Start a room in a lounge. The caller must be subscribed to it.
+
+        Starting a room does not join it: ask for a call token with
+        [`POST /calls/jitsi/create`](/api/create-jitsi-video-call) and this
+        room's ID. A room that is never joined is discarded shortly afterwards.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      parameters:
+        - $ref: "#/components/parameters/ChannelIdInPath"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: |
+                    What to call the room. Surrounding whitespace is stripped,
+                    and the result must not be empty.
+                  example: "Design sync"
+                is_private:
+                  type: boolean
+                  default: false
+                  description: |
+                    Whether the room is locked. A private room is still listed
+                    to everyone who can see the lounge, along with who is in it;
+                    only joining it is restricted.
+                  example: false
+              required:
+                - name
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      room:
+                        $ref: "#/components/schemas/LoungeRoom"
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "room":
+                          {
+                            "id": 11,
+                            "channel_id": 7,
+                            "name": "Design sync",
+                            "creator_id": 10,
+                            "is_private": false,
+                            "can_join": true,
+                          },
                       }
 
   /calls/nextcloud_talk/create:
@@ -27593,6 +28140,8 @@ components:
             topics_policy: {}
             voice_video_enabled: {}
             text_chat_disabled: {}
+            is_lounge: {}
+            call_door_policy: {}
             first_message_id:
               nullable: true
             folder_id:
@@ -27610,6 +28159,7 @@ components:
             can_subscribe_group: {}
             can_resolve_topics_group: {}
             can_create_topic_group: {}
+            can_create_rooms_group: {}
             subscriber_count: {}
             stream_weekly_traffic:
               type: integer
@@ -27789,6 +28339,39 @@ components:
             to being single-threaded.
 
             **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+        is_lounge:
+          type: boolean
+          description: |
+            Whether this channel is a lounge: a channel whose conversations
+            are ephemeral rooms rather than topics. A room exists only while
+            someone is in it, so a lounge stores nothing and an idle one is
+            empty.
+
+            Mutually exclusive with `voice_video_enabled`. A voice channel is
+            one room that is always there; a lounge is many rooms that are
+            not.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+        call_door_policy:
+          type: string
+          enum:
+            - anarchy
+            - moderator
+            - authenticated_user
+          description: |
+            Who must already be in a call in this channel before anyone else may
+            come in: `anarchy` for nobody, `moderator` for somebody who moderates
+            the call, `authenticated_user` for anybody with a Zulip account.
+
+            A rule about the door, not about the room: people already talking are
+            not disconnected when the doorman leaves, because ending a
+            conversation somebody is having is a worse failure than letting it
+            finish unattended. Whoever holds the door open is never refused by
+            it.
+
+            Only meaningful on a voice channel or a lounge.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
         first_message_id:
           type: integer
           nullable: true
@@ -27844,6 +28427,8 @@ components:
           $ref: "#/components/schemas/CanResolveTopicsGroup"
         can_create_topic_group:
           $ref: "#/components/schemas/CanCreateTopicGroup"
+        can_create_rooms_group:
+          $ref: "#/components/schemas/CanCreateRoomsGroup"
         subscriber_count:
           type: number
           description: |
@@ -28975,6 +29560,39 @@ components:
             to being single-threaded.
 
             **Changes**: New in Zulip 13.0 (feature level ZF-bdd936).
+        is_lounge:
+          type: boolean
+          description: |
+            Whether this channel is a lounge: a channel whose conversations
+            are ephemeral rooms rather than topics. A room exists only while
+            someone is in it, so a lounge stores nothing and an idle one is
+            empty.
+
+            Mutually exclusive with `voice_video_enabled`. A voice channel is
+            one room that is always there; a lounge is many rooms that are
+            not.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+        call_door_policy:
+          type: string
+          enum:
+            - anarchy
+            - moderator
+            - authenticated_user
+          description: |
+            Who must already be in a call in this channel before anyone else may
+            come in: `anarchy` for nobody, `moderator` for somebody who moderates
+            the call, `authenticated_user` for anybody with a Zulip account.
+
+            A rule about the door, not about the room: people already talking are
+            not disconnected when the doorman leaves, because ending a
+            conversation somebody is having is a worse failure than letting it
+            finish unattended. Whoever holds the door open is never refused by
+            it.
+
+            Only meaningful on a voice channel or a lounge.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
         is_recently_active:
           type: boolean
           description: |
@@ -29015,6 +29633,8 @@ components:
           $ref: "#/components/schemas/CanResolveTopicsGroup"
         can_create_topic_group:
           $ref: "#/components/schemas/CanCreateTopicGroup"
+        can_create_rooms_group:
+          $ref: "#/components/schemas/CanCreateRoomsGroup"
         is_archived:
           type: boolean
           description: |
@@ -30932,6 +31552,95 @@ components:
         [private channels](/help/channel-permissions#private-channels).
       type: boolean
       example: false
+    LoungeRoom:
+      type: object
+      additionalProperties: false
+      description: |
+        A live room inside a lounge. It exists only while somebody is in it.
+
+        **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
+      properties:
+        id:
+          type: integer
+          description: |
+            The ID of the room. Never reused, and meaningful only for as long as
+            the room lasts.
+        channel_id:
+          type: integer
+          description: |
+            The ID of the lounge the room is in.
+        name:
+          type: string
+          description: |
+            What the room was called by whoever started it.
+        creator_id:
+          type: integer
+          nullable: true
+          description: |
+            The user who started the room, and who moderates it. `null` if that
+            account has since been deleted, which leaves the room without a
+            moderator rather than transferring it.
+        is_private:
+          type: boolean
+          description: |
+            Whether the room is locked. A private room is still listed to
+            everyone who can see the lounge, along with who is in it; only
+            joining it is restricted.
+        can_join:
+          type: boolean
+          description: |
+            Whether the user making the request may join this room. Sent rather
+            than left for clients to work out, so that the rule behind it lives
+            in one place.
+        can_knock:
+          type: boolean
+          description: |
+            Whether the user making the request may ask to be let in. Only ever
+            true for somebody the room would otherwise refuse — there is nothing
+            to ask for otherwise.
+        can_administer:
+          type: boolean
+          description: |
+            Whether the user making the request may change this room's settings
+            with [`PATCH /lounges/rooms/{room_id}`](/api/update-lounge-room).
+            The same people get a moderator claim in the call itself: whoever
+            decides who may come in is who the conference treats as running it.
+        waiting_for_doorman:
+          type: boolean
+          description: |
+            Whether this room's door is currently shut for want of whoever holds
+            it open, because the lounge's `call_door_policy` asks for somebody who
+            is not there. Which doorman is missing follows from that policy; this
+            says only that one is.
+
+            Deliberately separate from `can_join`, and clients should treat the
+            two differently: `can_join: false` is shut to this user and stays
+            shut, while this is shut to everyone until somebody who runs the room
+            arrives. Presenting them the same way tells the user a padlock is on
+            a public room and leaves them no idea whether waiting would help.
+        invited_user_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The users who have been let into this room individually. Present only
+            for a user who may administer the room: the rest of the lounge is
+            entitled to see that a room is locked, not to see its guest list.
+        knockable_by_users:
+          type: boolean
+          description: |
+            Whether members of the organization who are refused entry may ask to
+            be let in. Meaningless on a public room, where nobody is refused.
+        knockable_by_guests:
+          type: boolean
+          description: |
+            Whether users with guest accounts who are refused entry may ask to be
+            let in. Separate from `knockable_by_users` because the two
+            populations are not comparable, and a room may reasonably want one
+            without the other.
+
+            Not about unauthenticated visitors, who cannot knock at all: being
+            admitted means being added to a set of Zulip accounts.
     Principals:
       description: |
         A list of user IDs (preferred) or Zulip API email
@@ -31294,6 +32003,21 @@ components:
             **Changes**: New in Zulip 11.0 (feature level 402).
 
             [setting-values]: /api/group-setting-values
+    CanCreateRoomsGroup:
+      allOf:
+        - $ref: "#/components/schemas/GroupSettingValue"
+        - description: |
+            A [group-setting value][setting-values] defining the set of users who
+            have permission to start a room in this lounge.
+
+            Deliberately separate from who may subscribe: a lounge where everyone
+            listens and a few convene is a reasonable arrangement, and tying the
+            two together would force it to be expressed by excluding people from
+            the lounge itself.
+
+            Only meaningful on a lounge.
+
+            **Changes**: New in Zulip 13.0 (feature level ZF-4c1e7a).
     CanCreateTopicGroup:
       allOf:
         - $ref: "#/components/schemas/GroupSettingValue"

@@ -458,6 +458,7 @@ def send_subscription_add_events(
                 is_archived=stream_dict["is_archived"],
                 can_add_subscribers_group=stream_dict["can_add_subscribers_group"],
                 can_administer_channel_group=stream_dict["can_administer_channel_group"],
+                can_create_rooms_group=stream_dict["can_create_rooms_group"],
                 can_create_topic_group=stream_dict["can_create_topic_group"],
                 can_delete_any_message_group=stream_dict["can_delete_any_message_group"],
                 can_delete_own_message_group=stream_dict["can_delete_own_message_group"],
@@ -490,6 +491,8 @@ def send_subscription_add_events(
                 topics_policy=stream_dict["topics_policy"],
                 voice_video_enabled=stream_dict["voice_video_enabled"],
                 text_chat_disabled=stream_dict["text_chat_disabled"],
+                is_lounge=stream_dict["is_lounge"],
+                call_door_policy=stream_dict["call_door_policy"],
                 # Computed fields not present in Stream.API_FIELDS
                 is_announcement_only=stream_dict["is_announcement_only"],
             )

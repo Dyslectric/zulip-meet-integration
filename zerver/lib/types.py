@@ -170,6 +170,7 @@ class RawStreamDict(TypedDict):
 
     can_add_subscribers_group_id: int
     can_administer_channel_group_id: int
+    can_create_rooms_group_id: int
     can_create_topic_group_id: int
     can_delete_any_message_group_id: int
     can_delete_own_message_group_id: int
@@ -199,6 +200,8 @@ class RawStreamDict(TypedDict):
     topics_policy: str
     voice_video_enabled: bool
     text_chat_disabled: bool
+    is_lounge: bool
+    call_door_policy: str
 
 
 class RawSubscriptionDict(TypedDict):
@@ -228,6 +231,7 @@ class SubscriptionStreamDict(TypedDict):
     audible_notifications: bool | None
     can_add_subscribers_group: int | UserGroupMembersDict
     can_administer_channel_group: int | UserGroupMembersDict
+    can_create_rooms_group: int | UserGroupMembersDict
     can_create_topic_group: int | UserGroupMembersDict
     can_delete_any_message_group: int | UserGroupMembersDict
     can_delete_own_message_group: int | UserGroupMembersDict
@@ -268,12 +272,15 @@ class SubscriptionStreamDict(TypedDict):
     topics_policy: str
     voice_video_enabled: bool
     text_chat_disabled: bool
+    is_lounge: bool
+    call_door_policy: str
     wildcard_mentions_notify: bool | None
 
 
 class NeverSubscribedStreamDict(TypedDict):
     can_add_subscribers_group: int | UserGroupMembersDict
     can_administer_channel_group: int | UserGroupMembersDict
+    can_create_rooms_group: int | UserGroupMembersDict
     can_create_topic_group: int | UserGroupMembersDict
     can_delete_any_message_group: int | UserGroupMembersDict
     can_delete_own_message_group: int | UserGroupMembersDict
@@ -307,6 +314,8 @@ class NeverSubscribedStreamDict(TypedDict):
     topics_policy: str
     voice_video_enabled: bool
     text_chat_disabled: bool
+    is_lounge: bool
+    call_door_policy: str
 
 
 class DefaultStreamDict(TypedDict):
@@ -317,6 +326,7 @@ class DefaultStreamDict(TypedDict):
 
     can_add_subscribers_group: int | UserGroupMembersDict
     can_administer_channel_group: int | UserGroupMembersDict
+    can_create_rooms_group: int | UserGroupMembersDict
     can_create_topic_group: int | UserGroupMembersDict
     can_delete_any_message_group: int | UserGroupMembersDict
     can_delete_own_message_group: int | UserGroupMembersDict
@@ -346,6 +356,8 @@ class DefaultStreamDict(TypedDict):
     topics_policy: str
     voice_video_enabled: bool
     text_chat_disabled: bool
+    is_lounge: bool
+    call_door_policy: str
     # Computed fields not specified in `Stream.API_FIELDS`
     is_announcement_only: bool
     is_default: NotRequired[bool]

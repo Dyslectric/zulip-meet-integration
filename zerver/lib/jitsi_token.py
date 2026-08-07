@@ -24,6 +24,7 @@ end up in pasted links, browser history and screenshots.
 
 import hashlib
 import hmac
+import secrets
 import time
 from typing import Any, TypedDict
 
@@ -60,7 +61,9 @@ def jitsi_jwt_is_configured() -> bool:
     return (
         settings.JITSI_SERVER_URL is not None
         and settings.JITSI_JWT_APP_ID is not None
-        and (settings.JITSI_JWT_APP_SECRET is not None or settings.JITSI_JWT_PRIVATE_KEY is not None)
+        and (
+            settings.JITSI_JWT_APP_SECRET is not None or settings.JITSI_JWT_PRIVATE_KEY is not None
+        )
     )
 
 
@@ -92,6 +95,22 @@ def direct_message_scope(realm_id: int, user_ids: list[int]) -> str:
     return f"realm:{realm_id}|dm:" + ",".join(str(user_id) for user_id in sorted(set(user_ids)))
 
 
+def lounge_room_scope(realm_id: int, stream_id: int, room_id: int) -> str:
+    """A room inside a lounge.
+
+    Unlike the two above, this scope is not derivable from the conversation
+    alone: a lounge holds many rooms at once, so the room's own id has to be in
+    it. That id comes from a `LoungeRoom` row, which is what makes a room
+    something you can name, lock and be a moderator of rather than just a
+    coincidence of who clicked first.
+
+    The row is deleted when the room empties, and ids are never reused, so a
+    scope is good for exactly one room's lifetime — the epoch has nothing left
+    to rotate here, and rooms are started fresh instead.
+    """
+    return f"realm:{realm_id}|lounge:{stream_id}|room:{room_id}"
+
+
 def build_user_context(
     *,
     user_id: int,
@@ -121,6 +140,37 @@ def build_user_context(
     if avatar_url:
         context["avatar"] = avatar_url
     return context
+
+
+#: Prefix on an anonymous visitor's ``context.user.id``. Deliberately not a
+#: number, and this is load-bearing rather than cosmetic: everything downstream
+#: reads that field as a Zulip user ID when it parses as one. The conferencing
+#: service's occupant parser does exactly that, and the rosters it builds are
+#: what the sidebar draws, so a visitor able to present ``"7"`` would appear as
+#: user 7 — name, avatar and all — to everyone in the call. A non-numeric id
+#: cannot collide with ``str(user.id)``, and the service already records an
+#: occupant it cannot resolve as anonymous rather than dropping them.
+GUEST_ID_PREFIX = "guest-"
+GUEST_ID_RANDOM_BYTES = 9
+
+#: How much of a self-chosen name to keep. A display name goes to everyone in
+#: the call, so it is bounded here rather than left to whatever a caller sends.
+GUEST_NAME_MAX_LENGTH = 40
+
+
+def build_guest_context(*, display_name: str) -> JitsiUserContext:
+    """Build ``context.user`` for a visitor with no Zulip account.
+
+    The identity is minted here and nowhere else, and it is minted fresh each
+    time: there is no account to be stable across, and a guest id that persisted
+    would be a tracking handle for someone who never asked for one.
+
+    ``moderator`` is false and there is no argument to make it otherwise. A
+    moderator claim is a statement about who runs a conversation, and it cannot
+    be held by somebody the deployment cannot name.
+    """
+    guest_id = GUEST_ID_PREFIX + secrets.token_hex(GUEST_ID_RANDOM_BYTES)
+    return {"id": guest_id, "name": display_name, "moderator": "false"}
 
 
 def mint_jitsi_token(

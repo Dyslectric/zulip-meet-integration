@@ -128,7 +128,7 @@ type RealmUserSettingDefaultProperties = z.infer<
 
 export const stream_settings_property_schema = z.union([
     z.keyof(stream_subscription_schema),
-    z.enum(["channel_privacy", "is_default_stream"]),
+    z.enum(["channel_privacy", "is_default_stream", "channel_kind"]),
 ]);
 type StreamSettingProperty = z.infer<typeof stream_settings_property_schema>;
 
@@ -162,6 +162,11 @@ export function get_stream_settings_property_value(
     }
     if (property_name === "is_default_stream") {
         return stream_data.is_default_stream_id(sub.stream_id);
+    }
+    // Synthetic like channel_privacy above: one control standing for the two
+    // booleans the channel actually stores.
+    if (property_name === "channel_kind") {
+        return stream_data.get_channel_kind(sub);
     }
     return sub[property_name];
 }
@@ -1203,6 +1208,15 @@ export function populate_data_for_stream_settings_request(
                     continue;
                 }
 
+                if (property_name === "channel_kind") {
+                    assert(typeof input_value === "string");
+                    data = {
+                        ...data,
+                        ...settings_data.get_request_data_for_channel_kind(input_value),
+                    };
+                    continue;
+                }
+
                 if (stream_permission_group_settings_schema.safeParse(property_name).success) {
                     const old_value = get_stream_settings_property_value(
                         stream_settings_property_schema.parse(property_name),
@@ -1654,6 +1668,7 @@ export const group_setting_widget_map = new Map<string, GroupSettingPillContaine
     ["can_add_members_group", null],
     ["can_add_subscribers_group", null],
     ["can_administer_channel_group", null],
+    ["can_create_rooms_group", null],
     ["can_create_topic_group", null],
     ["can_join_group", null],
     ["can_leave_group", null],

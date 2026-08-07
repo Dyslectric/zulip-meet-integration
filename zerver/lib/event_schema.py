@@ -648,7 +648,12 @@ def check_stream_update(
     elif prop == "default_push_notifications":
         assert extra_keys == set()
         assert isinstance(value, bool)
-    elif prop in ("voice_video_enabled", "text_chat_disabled"):
+    elif prop in (
+        "voice_video_enabled",
+        "text_chat_disabled",
+        "is_lounge",
+        "call_door_policy",
+    ):
         assert extra_keys == set()
         assert isinstance(value, bool)
     else:

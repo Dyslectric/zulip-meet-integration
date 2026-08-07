@@ -1,0 +1,50 @@
+{{! Who may come into this room. Deliberately not "who is in it" -- none of these
+settings ejects anyone, so the dialog is about the door and says so. }}
+<div class="settings-checkbox-wrapper">
+    <label class="checkbox">
+        <input type="checkbox" id="lounge_room_private" class="inline-block" {{#if is_private}}checked{{/if}} />
+        <span class="rendered-checkbox"></span>
+    </label>
+    <label for="lounge_room_private" class="inline">{{t "Only let people I admit join" }}</label>
+</div>
+
+{{! The knock switches and the guest list only mean anything on a locked room --
+nobody is refused entry to an open one -- so they are hidden until it is one. }}
+<div id="lounge_room_private_settings" class="{{#unless is_private}}hide{{/unless}}">
+    <div class="settings-checkbox-wrapper">
+        <label class="checkbox">
+            <input type="checkbox" id="lounge_room_knockable_by_users" class="inline-block" {{#if knockable_by_users}}checked{{/if}} />
+            <span class="rendered-checkbox"></span>
+        </label>
+        <label for="lounge_room_knockable_by_users" class="inline">{{t "Let people ask to be admitted" }}</label>
+    </div>
+
+    {{! A separate switch from the one above because the two populations are not
+    comparable: a colleague who wants in is a different proposition from an
+    anonymous visitor, and a room may reasonably want the first without the
+    second. }}
+    <div class="settings-checkbox-wrapper">
+        <label class="checkbox">
+            <input type="checkbox" id="lounge_room_knockable_by_guests" class="inline-block" {{#if knockable_by_guests}}checked{{/if}} />
+            <span class="rendered-checkbox"></span>
+        </label>
+        <label for="lounge_room_knockable_by_guests" class="inline">{{t "Let guests ask to be admitted" }}</label>
+    </div>
+
+    <div class="lounge-room-invited-container">
+        <label class="modal-field-label" for="lounge_room_invited_users">
+            {{t "People allowed in" }}
+        </label>
+        <div class="pill-container person_picker" id="lounge_room_invited_users">
+            <div class="input" contenteditable="true" data-placeholder="{{t 'Add people' }}">
+                {{~! Squash whitespace so that the placeholder shows when empty. ~}}
+            </div>
+        </div>
+        {{! Said plainly because it is the one thing about this box that is not
+        obvious: it unlocks the room for somebody who could already reach the
+        lounge, and does nothing at all for anybody else. }}
+        <div class="lounge-room-invited-hint">
+            {{t "They also need to be subscribed to this channel." }}
+        </div>
+    </div>
+</div>

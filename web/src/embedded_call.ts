@@ -79,12 +79,18 @@ let saved_geometry: {
 // as-is rather than changed.
 function parse_jitsi_url(raw_url: string): {
     domain: string;
+    origin: string;
     room_name: string;
     jwt: string | undefined;
 } {
     const url = new URL(raw_url);
     return {
         domain: url.host,
+        // Carried separately from `domain` because the two are wanted in
+        // different shapes: the External API takes a bare host, but fetching
+        // external_api.js needs a scheme, and assuming one for a URL we were
+        // handed is how you end up asking for https from an http deployment.
+        origin: url.origin,
         room_name: url.pathname.replace(/^\/+/, ""), // "<tenant>/<room>"
         jwt: url.searchParams.get("jwt") ?? undefined,
     };
@@ -108,22 +114,22 @@ function load_script(src: string): Promise<void> {
     });
 }
 
-async function load_external_api_uncached(domain: string): Promise<void> {
+async function load_external_api_uncached(origin: string): Promise<void> {
     try {
         await load_script(EXTERNAL_API_SAME_ORIGIN);
     } catch {
-        await load_script(`https://${domain}/external_api.js`);
+        await load_script(`${origin}/external_api.js`);
     }
     if (window.JitsiMeetExternalAPI === undefined) {
         throw new Error("external_api.js loaded but JitsiMeetExternalAPI is missing");
     }
 }
 
-async function load_external_api(domain: string): Promise<void> {
+async function load_external_api(origin: string): Promise<void> {
     if (window.JitsiMeetExternalAPI !== undefined) {
         return;
     }
-    external_api_promise ??= load_external_api_uncached(domain);
+    external_api_promise ??= load_external_api_uncached(origin);
     try {
         await external_api_promise;
     } catch (error) {
@@ -196,7 +202,7 @@ export async function start_embedded_call(
     raw_url: string,
     options: {label?: string; stream_id?: number} = {},
 ): Promise<void> {
-    const {domain, room_name, jwt} = parse_jitsi_url(raw_url);
+    const {domain, origin, room_name, jwt} = parse_jitsi_url(raw_url);
 
     if (current !== null) {
         if (current.url === raw_url) {
@@ -211,8 +217,12 @@ export async function start_embedded_call(
         dispose_current();
     }
 
-    await load_external_api(domain);
+    await load_external_api(origin);
     const JitsiMeetExternalAPI = window.JitsiMeetExternalAPI!;
+    // The External API takes a bare host and builds `https://<host>/…` itself,
+    // with the scheme hardcoded in external_api.js. That is why the deployment
+    // has to serve HTTPS even in development: there is no option to tell it
+    // otherwise, and an http-only Jitsi simply cannot be embedded.
     const api = new JitsiMeetExternalAPI(domain, {
         roomName: room_name,
         jwt,

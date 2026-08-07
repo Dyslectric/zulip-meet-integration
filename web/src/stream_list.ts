@@ -23,6 +23,7 @@ import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 import * as keydown_util from "./keydown_util.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
 import {localstorage} from "./localstorage.ts";
+import * as lounge_rooms from "./lounge_rooms.ts";
 import type {Message} from "./message_store.ts";
 import * as mouse_drag from "./mouse_drag.ts";
 import * as narrow_state from "./narrow_state.ts";
@@ -846,8 +847,7 @@ function build_stream_sidebar_li(sub: StreamSubscription, for_modal = false): JQ
     // A channel with text chat switched off has nothing to compose into and no
     // topics to search, so it offers only the call button and the menu.
     const text_chat_disabled = jitsi_sidebar.channel_has_no_text_chat(sub);
-    const can_post_messages =
-        !text_chat_disabled && stream_data.can_post_messages_in_stream(sub);
+    const can_post_messages = !text_chat_disabled && stream_data.can_post_messages_in_stream(sub);
     const url = hash_util.channel_url_by_user_setting(sub.stream_id);
     const args = {
         name,
@@ -865,6 +865,7 @@ function build_stream_sidebar_li(sub: StreamSubscription, for_modal = false): JQ
         is_empty_topic_only_channel: stream_data.is_empty_topic_only_channel(sub.stream_id),
         voice_video_enabled: jitsi_sidebar.channel_allows_calls(sub),
         text_chat_disabled,
+        is_lounge: stream_data.channel_is_lounge(sub),
         for_modal,
     };
     const $list_item = $(render_stream_sidebar_row(args));
@@ -1584,6 +1585,15 @@ export function set_event_handlers({
         // row carries no href for the same reason, but this handler does the
         // navigating rather than the browser, so it has to bail out too.
         const sub = sub_store.get(stream_id);
+        if (sub !== undefined && stream_data.channel_is_lounge(sub)) {
+            // Selecting a lounge opens it in place. It deliberately does not take
+            // over the centre pane, which keeps showing whatever channel you were
+            // reading: a lounge is something to glance at while you work, not
+            // somewhere to go.
+            e.preventDefault();
+            lounge_rooms.toggle_expanded(stream_id);
+            return;
+        }
         if (sub !== undefined && jitsi_sidebar.channel_has_no_text_chat(sub)) {
             e.preventDefault();
             return;

@@ -55,6 +55,7 @@ import * as gear_menu from "./gear_menu.ts";
 import * as gif_picker_ui from "./gif_picker_ui.ts";
 import * as gif_state from "./gif_state.ts";
 import * as group_permission_settings from "./group_permission_settings.ts";
+import * as guest_call from "./guest_call.ts";
 import * as hashchange from "./hashchange.ts";
 import * as hotkey from "./hotkey.ts";
 import * as i18n from "./i18n.ts";
@@ -69,6 +70,8 @@ import * as lightbox from "./lightbox.ts";
 import * as linkifiers from "./linkifiers.ts";
 import * as loading_error from "./loading_error.ts";
 import * as local_message from "./local_message.ts";
+import * as lounge_rooms from "./lounge_rooms.ts";
+import * as lounge_rooms_ui from "./lounge_rooms_ui.ts";
 import * as markdown from "./markdown.ts";
 import * as markdown_config from "./markdown_config.ts";
 import * as message_actions_popover from "./message_actions_popover.ts";
@@ -509,11 +512,25 @@ export async function initialize_everything(state_data) {
         } else {
             return;
         }
+        // A visitor with no account has no member token to mint. Only a
+        // web-public channel gets this far — the button is hidden everywhere
+        // else — and a direct message never does, there being nobody for a
+        // visitor to have one with.
+        if (guest_call.is_spectator()) {
+            if (stream_id === undefined) {
+                return;
+            }
+            guest_call.join_as_guest({stream_id}, {label, stream_id});
+            return;
+        }
         void channel.post({
             url: "/json/calls/jitsi/create",
             data,
             success(response) {
                 void start_embedded_call(response.url, {label, stream_id});
+            },
+            error(xhr) {
+                guest_call.report_call_refusal(xhr);
             },
         });
     }
@@ -545,9 +562,99 @@ export async function initialize_everything(state_data) {
         {capture: true},
     );
 
+    // Lounge rooms, for the same reason and in the same place as the call button
+    // above: a room row sits inside the lounge's sidebar row, which delegates
+    // clicks to expanding it, so this has to run first. It also has to live here
+    // rather than in jitsi_sidebar, which draws these rows: joining a room means
+    // starting a call, and jitsi_sidebar must not import that (import cycle).
+    // Shared by the click and keydown handlers below, which do exactly the same
+    // thing: every lounge control is focusable, so Enter has to reach it as well
+    // as the pointer, and keeping one copy is what stops the two drifting.
+    const handle_lounge_control = (e) => {
+        if (!(e.target instanceof Element)) {
+            return;
+        }
+        const start = e.target.closest(".channel-new-room-button");
+        if (start instanceof HTMLElement) {
+            e.preventDefault();
+            e.stopPropagation();
+            const lounge_id = Number.parseInt(start.dataset.streamId ?? "", 10);
+            if (!Number.isNaN(lounge_id)) {
+                lounge_rooms_ui.start_room(lounge_id);
+            }
+            return;
+        }
+
+        const settings = e.target.closest(".jitsi-lounge-room-settings-button");
+        if (settings instanceof HTMLElement) {
+            e.preventDefault();
+            e.stopPropagation();
+            const room = lounge_rooms.room_by_id(
+                Number.parseInt(settings.dataset.loungeRoomId ?? "", 10),
+            );
+            if (room !== undefined && room.can_administer) {
+                lounge_rooms_ui.room_settings(room);
+            }
+            return;
+        }
+
+        // Answering a knock, from the row of the person doing the knocking.
+        const admit = e.target.closest(".jitsi-lounge-admit-button");
+        if (admit instanceof HTMLElement) {
+            e.preventDefault();
+            e.stopPropagation();
+            const room_id = Number.parseInt(admit.dataset.loungeRoomId ?? "", 10);
+            const user_id = Number.parseInt(admit.dataset.userId ?? "", 10);
+            if (!Number.isNaN(room_id) && !Number.isNaN(user_id)) {
+                lounge_rooms_ui.admit_to_room(room_id, user_id);
+            }
+            return;
+        }
+
+        const knock = e.target.closest(".jitsi-lounge-room-knock-button");
+        if (knock instanceof HTMLElement) {
+            e.preventDefault();
+            e.stopPropagation();
+            const room = lounge_rooms.room_by_id(
+                Number.parseInt(knock.dataset.loungeRoomId ?? "", 10),
+            );
+            if (room !== undefined && room.can_knock) {
+                lounge_rooms_ui.knock_on_room(room);
+            }
+            return;
+        }
+
+        // Only the call button joins. Clicking the row itself does nothing:
+        // joining takes over your microphone and announces you to everyone
+        // already in there, which is not something to do because somebody
+        // clicked while reading who was present.
+        const join = e.target.closest(".jitsi-lounge-room-call-button");
+        if (!(join instanceof HTMLElement)) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const room = lounge_rooms.room_by_id(Number.parseInt(join.dataset.loungeRoomId ?? "", 10));
+        if (room !== undefined && room.can_join) {
+            lounge_rooms_ui.join_room(room);
+        }
+    };
+
+    document.addEventListener("click", handle_lounge_control, {capture: true});
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            handle_lounge_control(e);
+        }
+    });
+
     // Call-aware left sidebar: speaker/lock icons and participant avatars on
     // channels with a live call, polled from the bulk occupancy feed.
     jitsi_sidebar.initialize();
+    // Lounge rooms redraw through the sidebar, which is what draws them.
+    lounge_rooms.initialize(() => {
+        jitsi_sidebar.apply_channel_rows();
+    });
 
     mouse_drag.initialize();
     sidebar_ui.restore_sidebar_toggle_status();

@@ -11,7 +11,8 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 import requests
 from defusedxml import ElementTree
 from django.conf import settings
-from django.core.signing import Signer
+from django.contrib.auth.models import AnonymousUser
+from django.core.signing import BadSignature, Signer
 from django.http import HttpRequest, HttpResponse
 from django.middleware import csrf
 from django.shortcuts import redirect, render
@@ -28,37 +29,49 @@ from requests_oauthlib import OAuth2Session
 from typing_extensions import TypedDict, override
 
 from zerver.actions.video_calls import do_set_video_call_provider_token
+from zerver.context_processors import get_valid_realm_from_request
 from zerver.decorator import zulip_login_required
 from zerver.lib.cache import (
     cache_with_key,
     flush_zoom_server_access_token_cache,
     zoom_server_access_token_cache_key,
 )
-from django.core.signing import BadSignature
-
-from zerver.lib.exceptions import ErrorCode, JsonableError
+from zerver.lib.call_presence import authenticated_user_is_present, moderator_is_present
+from zerver.lib.exceptions import ErrorCode, JsonableError, MissingAuthenticationError
 from zerver.lib.jitsi_token import (
+    GUEST_NAME_MAX_LENGTH,
+    build_guest_context,
     build_user_context,
     channel_scope,
     derive_room_name,
     direct_message_scope,
     jitsi_jwt_is_configured,
+    lounge_room_scope,
     mint_jitsi_token,
+)
+from zerver.lib.lounges import (
+    access_lounge_room_by_id,
+    channel_moderator_ids,
+    reconcile_lounge_rooms,
+    room_moderator_ids,
+    user_may_join_room,
+    user_moderates_room,
 )
 from zerver.lib.message import truncate_content
 from zerver.lib.outgoing_http import OutgoingSession
 from zerver.lib.partial import partial
 from zerver.lib.pysa import mark_sanitized
 from zerver.lib.response import json_success
-from zerver.lib.streams import access_stream_by_id
+from zerver.lib.streams import access_stream_by_id, access_web_public_stream
 from zerver.lib.subdomains import get_subdomain
 from zerver.lib.typed_endpoint import typed_endpoint, typed_endpoint_without_parameters
 from zerver.lib.url_encoding import append_url_query_string
 from zerver.lib.user_groups import is_user_in_group
 from zerver.lib.users import access_user_by_id
 from zerver.lib.utils import assert_is_not_none
-from zerver.models import NamedUserGroup, UserProfile
+from zerver.models import LoungeRoom, NamedUserGroup, Realm, Stream, UserProfile
 from zerver.models.realms import get_realm
+from zerver.models.streams import CallDoorPolicyEnum
 
 
 class VideoCallSession(OutgoingSession):
@@ -813,6 +826,28 @@ def resolve_jitsi_tenant(user: UserProfile) -> str:
     return user.realm.subdomain.lower()
 
 
+def resolve_guest_jitsi_tenant(realm: Realm) -> str:
+    """The tenant for a visitor who is in no groups to map.
+
+    `resolve_jitsi_tenant` picks a tenant from the groups a user belongs to, and
+    an anonymous visitor belongs to none, so this is the deployment default —
+    exactly what a member with no mapped group would get.
+
+    A deployment that sets JITSI_TENANT_BY_GROUP and puts a web-public channel's
+    whole membership in a mapped group therefore has no working anonymous route
+    into that channel: the visitor lands in the default tenant and the members
+    are elsewhere. The two features are answering different questions — group
+    tenanting isolates named populations from each other, anonymous access
+    deliberately admits an unnamed one — and reconciling them would mean
+    deriving the tenant from the channel rather than from who is joining, which
+    is a change to how every existing call is routed. Left as a documented
+    limitation rather than half-solved here.
+    """
+    if settings.JITSI_DEFAULT_TENANT is not None:
+        return settings.JITSI_DEFAULT_TENANT.lower()
+    return realm.subdomain.lower()
+
+
 EPOCH_SIGNER_SALT = "zerver.views.video_calls.jitsi_epoch"
 
 
@@ -841,10 +876,22 @@ def unsign_jitsi_epoch(scope: str, epoch_token: str | None) -> int:
         raise JsonableError(_("Invalid epoch token"))
     return epoch
 
+
 logger = logging.getLogger(__name__)
 
 
-def notify_conferencing_service(user, *, scope, room, tenant, stream_id, user_ids=None):
+def notify_conferencing_service(
+    *,
+    realm: Realm,
+    scope: str,
+    room: str,
+    tenant: str,
+    stream_id: int | None,
+    initiator_id: int | None = None,
+    initiator_name: str = "",
+    user_ids: list[int] | None = None,
+    lounge_room_id: int | None = None,
+) -> None:
     """Best-effort: tell the conferencing service a call was minted.
 
     The service owns the call message and occupancy roster but can't reverse a
@@ -854,30 +901,107 @@ def notify_conferencing_service(user, *, scope, room, tenant, stream_id, user_id
     the service posts a DM/group message authored as the initiator (see
     zerver/views/jitsi_hook.py), so it lands in the real conversation. For a DM we
     send the full participant set (initiator included) for the service to post.
+
+    The initiator is passed as an id rather than a user because an anonymous
+    visitor on a web-public channel mints calls too and has neither. That is only
+    possible for a channel or lounge-room call, which the service records without
+    authoring anything — nothing here needs a Zulip account to attribute.
     """
     url = getattr(settings, "JITSI_CONFERENCING_URL", None)
     if not url:
         return
     participants = None
     if stream_id is None:
-        participants = sorted(set(user_ids or []) | {user.id})
+        # A DM call, which always has a named initiator: there is no anonymous
+        # route to one, and the service authors its message as that person.
+        assert initiator_id is not None
+        participants = sorted(set(user_ids or []) | {initiator_id})
     try:
         requests.post(
             url.rstrip("/") + "/api/v1/jitsi/calls/created",
             json={
-                "room": room, "tenant": tenant, "scope": scope,
-                "realm_id": user.realm_id, "realm_subdomain": user.realm.subdomain,
-                "stream_id": stream_id, "user_ids": participants,
-                "initiator_id": user.id,
-                "initiator_name": user.full_name,
+                "room": room,
+                "tenant": tenant,
+                "scope": scope,
+                "realm_id": realm.id,
+                "realm_subdomain": realm.subdomain,
+                "stream_id": stream_id,
+                "user_ids": participants,
+                "lounge_room_id": lounge_room_id,
+                "initiator_id": initiator_id,
+                "initiator_name": initiator_name,
                 "topic": getattr(settings, "JITSI_CALL_TOPIC", "Calls"),
             },
-            headers={"Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"},
+            headers={
+                "Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"
+            },
             timeout=2,
             proxies={"http": None, "https": None},
         )
     except Exception:
         logger.warning("could not notify conferencing service of call in %s", room, exc_info=True)
+
+
+def refuse_if_the_door_is_shut(
+    stream: Stream,
+    *,
+    lounge_room: LoungeRoom | None,
+    is_moderator: bool,
+    is_authenticated: bool,
+) -> None:
+    """Enforce the channel's `call_door_policy`, at the door and only at the door.
+
+    Checked when a token is minted and nowhere else, which is what makes every
+    policy here a door policy rather than a kill switch: a session already
+    established keeps its Prosody connection, and nothing here reaches into a
+    call to end it. The people already talking finish their conversation
+    unattended, which is a far better failure than being cut off mid-sentence
+    because the last moderator closed their laptop.
+
+    **Whoever holds the door open is never turned away by it.** That is what
+    makes it safe to demand positive evidence below: a moderator can always walk
+    into a moderator-guarded call and an account holder into an
+    authenticated-user-guarded one, and their arrival is what opens the door for
+    everybody else. Without that exemption a guarded channel could never have a
+    first person in it at all.
+    """
+    policy = stream.call_door_policy
+    lounge_room_id = lounge_room.id if lounge_room is not None else None
+
+    if policy == CallDoorPolicyEnum.moderator.value:
+        if is_moderator:
+            return
+        moderator_ids = (
+            channel_moderator_ids(stream)
+            if lounge_room is None
+            else room_moderator_ids(stream, lounge_room)
+        )
+        if not moderator_is_present(
+            realm_id=stream.realm_id,
+            stream_id=stream.id,
+            lounge_room_id=lounge_room_id,
+            moderator_ids=moderator_ids,
+        ):
+            raise JsonableError(_("Nobody who moderates this call is in it right now."))
+        return
+
+    if policy == CallDoorPolicyEnum.authenticated_user.value:
+        # Never refuses an account holder, so its whole effect falls on anonymous
+        # visitors: they may join a conversation members are having, and cannot
+        # start one among themselves.
+        if is_authenticated:
+            return
+        if not authenticated_user_is_present(
+            realm_id=stream.realm_id,
+            stream_id=stream.id,
+            lounge_room_id=lounge_room_id,
+        ):
+            raise JsonableError(_("Nobody from this organization is in this call right now."))
+        return
+
+    # anarchy, and anything a future version adds that this one does not know:
+    # an unrecognised policy must not become an accidental lock.
+
 
 @typed_endpoint
 def create_jitsi_call(
@@ -886,6 +1010,7 @@ def create_jitsi_call(
     *,
     stream_id: Json[int] | None = None,
     user_ids: Json[list[int]] | None = None,
+    lounge_room_id: Json[int] | None = None,
     epoch_token: str | None = None,
     rotate: Json[bool] = False,
 ) -> HttpResponse:
@@ -894,29 +1019,51 @@ def create_jitsi_call(
     if not jitsi_jwt_is_configured():
         raise VideoCallProviderNotConfiguredError("Jitsi Meet (JWT)")
 
-    if (stream_id is None) == (user_ids is None):
-        raise JsonableError(_("Specify exactly one of stream_id or user_ids"))
+    given = [x for x in (stream_id, user_ids, lounge_room_id) if x is not None]
+    if len(given) != 1:
+        raise JsonableError(_("Specify exactly one of stream_id, user_ids or lounge_room_id"))
 
     is_moderator = user.is_realm_admin
-    if stream_id is not None:
+    # The channel a lounge room belongs to. Carried separately from `stream_id`,
+    # which stays None for a room: the caller asked for a room, not for the
+    # lounge's own call, and a lounge does not have one of those.
+    lounge_channel_id: int | None = None
+    if lounge_room_id is not None:
+        # A room in a lounge. Unlike the other two kinds, the conversation is not
+        # the channel: the channel is only where the room lives, and it is the
+        # room that decides who may come in and who runs it.
+        stream, lounge_room = access_lounge_room_by_id(user, lounge_room_id)
+        if not user_may_join_room(user, stream, lounge_room):
+            raise JsonableError(_("This room is private."))
+        is_moderator = is_moderator or user_moderates_room(user, stream, lounge_room)
+        refuse_if_the_door_is_shut(
+            stream, lounge_room=lounge_room, is_moderator=is_moderator, is_authenticated=True
+        )
+        scope = lounge_room_scope(user.realm_id, stream.id, lounge_room.id)
+        lounge_channel_id = stream.id
+    elif stream_id is not None:
         # access_stream_by_id raises unless the user can reach the channel at
         # all; `sub` is None when they can read it without being subscribed, and
         # subscription is what we treat as membership.
         stream, sub = access_stream_by_id(user, stream_id)
-        if sub is None:
+        # Subscription is membership for an ordinary voice channel. A web-public
+        # one is deliberately looser: it is open to anyone who can see it, which
+        # for a logged-in user means reading it is enough. Unauthenticated
+        # visitors come through the spectator path rather than here.
+        if sub is None and not stream.is_web_public:
             raise JsonableError(_("Not subscribed to this channel"))
-        if not stream.voice_video_enabled or stream.is_web_public:
+        if not stream.voice_video_enabled:
             # Enforced here, not just hidden in the UI: without this a client
-            # could still ask for a token for a channel with calls turned off. A
-            # web-public channel never gets one whatever its setting says: a call
-            # is for a known set of people, and anyone on the internet can read
-            # such a channel.
+            # could still ask for a token for a channel with calls turned off.
             raise JsonableError(_("Voice and video calls are disabled in this channel"))
         scope = channel_scope(user.realm_id, stream.id)
         # Moderator maps to "may administer this channel", not to "whoever
         # clicked first", which is what default Jitsi would otherwise do.
         is_moderator = is_moderator or is_user_in_group(
             stream.can_administer_channel_group_id, user
+        )
+        refuse_if_the_door_is_shut(
+            stream, lounge_room=None, is_moderator=is_moderator, is_authenticated=True
         )
     else:
         assert user_ids is not None
@@ -950,7 +1097,18 @@ def create_jitsi_call(
     url = f"{base_url.rstrip('/')}/{tenant}/{room}"
 
     notify_conferencing_service(
-        user, scope=scope, room=room, tenant=tenant, stream_id=stream_id, user_ids=user_ids
+        realm=user.realm,
+        scope=scope,
+        room=room,
+        tenant=tenant,
+        # A lounge room reports the lounge it is in, so the service can tell
+        # Zulip which channel's subscribers to notify, and so occupancy for it
+        # lands on the right sidebar row.
+        stream_id=stream_id if lounge_channel_id is None else lounge_channel_id,
+        initiator_id=user.id,
+        initiator_name=user.full_name,
+        user_ids=user_ids,
+        lounge_room_id=lounge_room_id,
     )
     return json_success(
         request,
@@ -961,6 +1119,129 @@ def create_jitsi_call(
             "epoch_token": sign_jitsi_epoch(scope, epoch),
         },
     )
+
+
+@typed_endpoint
+def create_jitsi_call_as_guest(
+    request: HttpRequest,
+    maybe_user_profile: UserProfile | AnonymousUser,
+    *,
+    stream_id: Json[int] | None = None,
+    lounge_room_id: Json[int] | None = None,
+    full_name: str = "",
+    epoch_token: str | None = None,
+) -> HttpResponse:
+    """A call token for a visitor with no Zulip account.
+
+    Reachable without logging in, and only ever for a web-public channel: the
+    administrator's web-public toggle is the control, and what it says is that
+    anyone who can see this channel can be heard in it. Everything narrower goes
+    through `create_jitsi_call`, which asks who you are.
+
+    The token this mints is strictly weaker than any that endpoint issues — a
+    generated identity, never a moderator, one room, and short-lived — so a
+    logged-in user reaching this endpoint gains nothing by it. That is why there
+    is no check that the caller is anonymous: there would be nothing to protect.
+    """
+    if settings.JITSI_SERVER_URL is None:
+        raise VideoCallProviderNotConfiguredError("Jitsi Meet")
+    if not jitsi_jwt_is_configured():
+        raise VideoCallProviderNotConfiguredError("Jitsi Meet (JWT)")
+
+    given = [x for x in (stream_id, lounge_room_id) if x is not None]
+    if len(given) != 1:
+        raise JsonableError(_("Specify exactly one of stream_id or lounge_room_id"))
+
+    realm = get_valid_realm_from_request(request)
+
+    # The channel a lounge room belongs to, carried separately from `stream_id`
+    # for the same reason as in `create_jitsi_call`.
+    lounge_channel_id: int | None = None
+    if lounge_room_id is not None:
+        try:
+            lounge_room = LoungeRoom.objects.select_related("channel").get(
+                id=lounge_room_id, channel__realm=realm
+            )
+        except LoungeRoom.DoesNotExist:
+            raise JsonableError(_("This room has ended."))
+        # access_web_public_stream is the entitlement and the whole of it: it
+        # raises unless the channel really is web-public, and unless the realm
+        # allows web-public channels at all.
+        stream = access_web_public_stream(lounge_room.channel_id, realm)
+        if not stream.is_lounge:
+            raise JsonableError(_("This channel is not a lounge."))
+        if lounge_room.is_private:
+            # Locked, and locked hardest of all against somebody with no
+            # identity: there is no invited set an anonymous visitor could be
+            # in, and no knock they could be recognised by afterwards.
+            raise JsonableError(_("This room is private."))
+        # A visitor is never a moderator, so the door policy applies to them
+        # unconditionally — and applies hardest, since there is nothing they
+        # could be that would exempt them.
+        refuse_if_the_door_is_shut(
+            stream, lounge_room=lounge_room, is_moderator=False, is_authenticated=False
+        )
+        scope = lounge_room_scope(realm.id, stream.id, lounge_room.id)
+        lounge_channel_id = stream.id
+    else:
+        assert stream_id is not None
+        stream = access_web_public_stream(stream_id, realm)
+        if not stream.voice_video_enabled:
+            raise JsonableError(_("Voice and video calls are disabled in this channel"))
+        refuse_if_the_door_is_shut(
+            stream, lounge_room=None, is_moderator=False, is_authenticated=False
+        )
+        scope = channel_scope(realm.id, stream.id)
+
+    # Accepted, not required. A visitor has no way to obtain one of these on
+    # their own, but a shared link can carry one, and it is signed and bound to
+    # its scope — so honouring it puts them in the room everyone else is in
+    # rather than in whichever one the conversation has moved on from. Without
+    # it they get the conversation's first room, which is the usual case.
+    epoch = unsign_jitsi_epoch(scope, epoch_token)
+
+    room = derive_room_name(scope, epoch)
+    tenant = resolve_guest_jitsi_tenant(realm)
+
+    # Marked rather than taken at face value. The name goes to everyone in the
+    # call and nothing behind it has been verified, so a visitor who types a
+    # colleague's name gets that name and the fact that they are a guest.
+    chosen = full_name.strip()[:GUEST_NAME_MAX_LENGTH]
+    display_name = _("{name} (guest)").format(name=chosen) if chosen else _("Guest")
+
+    token = mint_jitsi_token(
+        tenant=tenant,
+        room=room,
+        group=tenant,
+        user_context=build_guest_context(display_name=display_name),
+    )
+
+    base_url = realm.jitsi_server_url or settings.JITSI_SERVER_URL
+    url = f"{base_url.rstrip('/')}/{tenant}/{room}"
+
+    # Notified exactly as a member's mint is, and for the same reason: the
+    # service cannot reverse a room name back to a channel, and without this the
+    # visitor would be in a call that nobody's sidebar knew about. No initiator
+    # is sent because there is not one — a channel or lounge-room call is
+    # recorded without anything being authored, so there is nothing to attribute.
+    notify_conferencing_service(
+        realm=realm,
+        scope=scope,
+        room=room,
+        tenant=tenant,
+        stream_id=stream_id if lounge_channel_id is None else lounge_channel_id,
+        lounge_room_id=lounge_room_id,
+    )
+    return json_success(
+        request,
+        {
+            "url": append_url_query_string(url, urlencode({"jwt": token})),
+            "room": room,
+            "tenant": tenant,
+            "epoch_token": sign_jitsi_epoch(scope, epoch),
+        },
+    )
+
 
 @typed_endpoint
 def get_jitsi_occupancy(
@@ -1007,7 +1288,7 @@ def get_jitsi_occupancy(
 @typed_endpoint_without_parameters
 def get_jitsi_occupancy_all(
     request: HttpRequest,
-    user: UserProfile,
+    maybe_user_profile: UserProfile | AnonymousUser,
 ) -> HttpResponse:
     """Occupancy of every live channel call this user can see, for the sidebar.
 
@@ -1018,8 +1299,25 @@ def get_jitsi_occupancy_all(
     raises for one they cannot, and that room is dropped — so the response never
     reveals a call in a channel the user has no access to. Best-effort like
     `get_jitsi_occupancy`: an unreachable service yields an empty list, not an error.
+
+    An unauthenticated visitor sees the same thing for web-public channels only,
+    and never a direct-message call: being a participant is the entitlement for
+    those, and a visitor is not one of anything. Without this a visitor could join
+    a web-public call but not see that it was happening, which is most of what
+    the sidebar is for.
     """
-    empty: dict[str, Any] = {"rooms": []}
+    user: UserProfile | None = None
+    if maybe_user_profile.is_authenticated:
+        assert isinstance(maybe_user_profile, UserProfile)
+        user = maybe_user_profile
+    realm = user.realm if user is not None else get_valid_realm_from_request(request)
+
+    # Carried on the failure paths too. Which doors are shut does not depend on
+    # this fetch — it is read from what the occupancy hook has already recorded —
+    # and a client told "no calls, nothing closed" would offer a way in that the
+    # mint would then refuse, which is the exact confusion this field exists to
+    # prevent.
+    empty: dict[str, Any] = {"rooms": [], "closed_channel_ids": closed_channel_ids(user, realm)}
     url = getattr(settings, "JITSI_CONFERENCING_URL", None)
     if not url:
         return json_success(request, empty)
@@ -1038,19 +1336,61 @@ def get_jitsi_occupancy_all(
         return json_success(request, empty)
 
     rooms = data.get("rooms", []) if isinstance(data, dict) else []
+
+    # Reconciled here rather than anywhere else because this is the only place
+    # that holds the service's own account of what is live. Deliberately from the
+    # unfiltered feed and before the per-user filtering below: what exists is not
+    # a per-user question, and reconciling against one user's view would delete
+    # every room they happen not to be entitled to see. Reached only when the
+    # fetch above succeeded — the failure path returned already.
+    #
+    # Not run for an unauthenticated visitor: it deletes rows, and that should
+    # not be something an anonymous request causes. Anybody logged in looking at
+    # the same deployment does it instead, which for a live room is constant.
+    if user is not None:
+        reconcile_lounge_rooms(
+            {
+                room["lounge_room_id"]
+                for room in rooms
+                if isinstance(room, dict) and isinstance(room.get("lounge_room_id"), int)
+            }
+        )
+
     visible: list[dict[str, Any]] = []
     for room in rooms:
         stream_id = room.get("stream_id")
         if isinstance(stream_id, int):
+            if user is None:
+                # Web-public is the whole of a visitor's entitlement, and it is
+                # the same bar the guest token endpoint applies — so what they
+                # are shown is exactly what they could join.
+                try:
+                    access_web_public_stream(stream_id, realm)
+                except (JsonableError, MissingAuthenticationError):
+                    continue
+                visible.append(room)
+                continue
             try:
-                access_stream_by_id(user, stream_id)
+                stream, sub = access_stream_by_id(user, stream_id)
             except JsonableError:
                 continue  # user can't reach this channel: drop its call from the feed
+            # A room inside a lounge asks for more than the channel does: being
+            # able to read a lounge is not being one of the people in it, and the
+            # same bar is applied when starting or joining a room. Without this,
+            # a room would be advertised to someone the join path would refuse.
+            # A web-public lounge is the exception `access_lounge_by_id` makes,
+            # and has to be the same exception here or the sidebar would hide a
+            # room the join path would let them into.
+            if room.get("lounge_room_id") is not None and sub is None and not stream.is_web_public:
+                continue
             visible.append(room)
             continue
 
         # A DM/group call. Being one of its participants is the entitlement, so
-        # a user never learns about a call in a conversation they are not in.
+        # a user never learns about a call in a conversation they are not in —
+        # and a visitor, being nobody's correspondent, never learns of any.
+        if user is None:
+            continue
         user_ids = room.get("user_ids")
         if not isinstance(user_ids, list) or user.id not in user_ids:
             continue
@@ -1058,5 +1398,65 @@ def get_jitsi_occupancy_all(
         if realm_id is not None and realm_id != user.realm_id:
             continue
         visible.append(room)
-    return json_success(request, {"rooms": visible})
+    return json_success(
+        request,
+        {"rooms": visible, "closed_channel_ids": closed_channel_ids(user, realm)},
+    )
 
+
+def closed_channel_ids(user: UserProfile | None, realm: Realm) -> list[int]:
+    """Channels whose call would refuse this user right now, for want of a doorman.
+
+    Sent alongside the occupancy feed so a client can stop offering a way in
+    before it is clicked, rather than leaving somebody to discover the rule by
+    bouncing off it. The answer is computed here rather than derived by the
+    client for the usual reason: it depends on who moderates the channel and on
+    who is currently in the call, and neither is something a client should be
+    reimplementing.
+
+    Scoped to channels that have a doorman at all, which is opt-in and so a short
+    list on any realm — not to every channel the user can see.
+
+    A channel with no live call is in this list too, and that is the point: the
+    door is shut when nobody is there to hold it open, so somebody who cannot
+    hold it themselves cannot start a call either.
+    """
+    closed = []
+    for stream in Stream.objects.filter(realm=realm, deactivated=False).exclude(
+        call_door_policy=CallDoorPolicyEnum.anarchy.value
+    ):
+        if user is None:
+            # A visitor can only reach web-public channels; anything else is not
+            # theirs to be told about.
+            if not stream.is_web_public:
+                continue
+            # ...and holds neither door open, so both policies can refuse them.
+        else:
+            try:
+                access_stream_by_id(user, stream.id)
+            except JsonableError:
+                continue
+            # An account holder always holds the authenticated-user door open, so
+            # it is never shut on them; the moderator door is shut unless they
+            # moderate this channel.
+            if stream.call_door_policy == CallDoorPolicyEnum.authenticated_user.value:
+                continue
+            if (
+                is_user_in_group(stream.can_administer_channel_group_id, user)
+                or user.is_realm_admin
+            ):
+                continue
+        if stream.call_door_policy == CallDoorPolicyEnum.authenticated_user.value:
+            if not authenticated_user_is_present(
+                realm_id=realm.id, stream_id=stream.id, lounge_room_id=None
+            ):
+                closed.append(stream.id)
+            continue
+        if not moderator_is_present(
+            realm_id=realm.id,
+            stream_id=stream.id,
+            lounge_room_id=None,
+            moderator_ids=channel_moderator_ids(stream),
+        ):
+            closed.append(stream.id)
+    return closed

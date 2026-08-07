@@ -67,6 +67,7 @@ from zerver.models.scheduled_jobs import (
 from zerver.models.streams import ChannelEmailAddress as ChannelEmailAddress
 from zerver.models.streams import DefaultStream as DefaultStream
 from zerver.models.streams import DefaultStreamGroup as DefaultStreamGroup
+from zerver.models.streams import LoungeRoom as LoungeRoom
 from zerver.models.streams import Stream as Stream
 from zerver.models.streams import Subscription as Subscription
 from zerver.models.user_activity import UserActivity as UserActivity

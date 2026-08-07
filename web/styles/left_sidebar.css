@@ -1202,6 +1202,7 @@ ul.filters {
         .stream-privacy,
         .stream-name,
         .channel-new-topic-button,
+        .channel-new-room-button,
         .unread_count,
         .masked_unread_count,
         .sidebar-menu-icon {
@@ -1218,6 +1219,7 @@ ul.filters {
             .stream-privacy,
             .stream-name,
             .channel-new-topic-button,
+            .channel-new-room-button,
             .unread_count,
             .masked_unread_count,
             .sidebar-menu-icon {
@@ -2170,6 +2172,7 @@ li.active-sub-filter {
 }
 
 .channel-new-topic-button,
+.channel-new-room-button,
 .channel-search-topics-button {
     /* display: flex; is set on visible channels and
        channel-row hovers. */
@@ -2187,7 +2190,8 @@ li.active-sub-filter {
 }
 
 .narrow-filter:hover {
-    .channel-new-topic-button {
+    .channel-new-topic-button,
+    .channel-new-room-button {
         display: flex;
     }
 }
@@ -2287,6 +2291,7 @@ li.active-sub-filter {
 
 .bottom_left_row .sidebar-menu-icon,
 .bottom_left_row .channel-new-topic-button,
+.bottom_left_row .channel-new-room-button,
 .top_left_row .sidebar-menu-icon,
 .stream-list-section-container .sidebar-menu-icon {
     &:focus-visible {

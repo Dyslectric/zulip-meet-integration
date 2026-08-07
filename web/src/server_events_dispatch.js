@@ -29,6 +29,7 @@ import * as information_density from "./information_density.ts";
 import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
 import * as linkifiers from "./linkifiers.ts";
+import * as lounge_rooms from "./lounge_rooms.ts";
 import * as message_edit from "./message_edit.ts";
 import * as message_events from "./message_events.ts";
 import * as message_lists from "./message_lists.ts";
@@ -239,6 +240,21 @@ export function dispatch_normal_event(event) {
 
         case "jitsi_occupancy":
             jitsi_sidebar.apply_pushed_occupancy(event);
+            break;
+
+        case "lounge_rooms":
+            // Says only that this lounge's rooms changed, not how: whether a
+            // given user may join a given room is per-user, so the listing
+            // endpoint answers that rather than the event carrying something
+            // that would be right for some recipients and wrong for others.
+            lounge_rooms.handle_rooms_changed();
+            break;
+
+        case "lounge_knock":
+            // Somebody is at the door of a room this user moderates. Sent only
+            // to those who can open it, and kept nowhere on either side: the
+            // knock stands for a couple of minutes and is then over.
+            lounge_rooms.record_knock(event.room_id, event.user_id);
             break;
 
         case "onboarding_steps":

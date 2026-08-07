@@ -97,8 +97,18 @@
     height: 1.15em;
 }
 
+/* The lounge bars are drawn, and sit at the speaker's size rather than the
+   folder's: they stand in the same slot for the same reason, and a lounge that
+   read smaller than the voice channel above it would look subordinate to it
+   rather than a peer of it. */
+.narrow-filter .jitsi-call-glyph:has(> [data-glyph="bars"]) {
+    width: 1.3em;
+    height: 1.3em;
+}
+
 .narrow-filter .jitsi-call-glyph > [data-glyph="speaker"],
-.narrow-filter .jitsi-call-glyph > [data-glyph="folder"] {
+.narrow-filter .jitsi-call-glyph > [data-glyph="folder"],
+.narrow-filter .jitsi-call-glyph > [data-glyph="bars"] {
     width: 100%;
     height: 100%;
 }
@@ -115,7 +125,11 @@
 
 /* Zulip shrinks the sidebar globe to 0.8571em from a four-class selector, which
    outranks anything shorter; this has to out-specify it to grow the glyph. */
-.narrow-filter .subscription_block .stream-privacy .jitsi-call-glyph > .zulip-icon-globe {
+.narrow-filter
+    .subscription_block
+    .stream-privacy
+    .jitsi-call-glyph
+    > .zulip-icon-globe {
     font-size: 1em;
     line-height: 1;
 }
@@ -127,6 +141,18 @@
 .narrow-filter .jitsi-call-glyph .jitsi-privacy-badge {
     width: 0.78em;
     height: 0.78em;
+}
+
+/* The bars and the speaker are the badges carrying thin detail rather than one
+   solid shape -- four separate strokes, and two hairline waves -- and that detail
+   has to survive at a third of an em. A little more room and a little less
+   padding buys it without breaking the rule above: every badge still reads at one
+   size, these two just use their box properly. */
+.narrow-filter .jitsi-call-glyph .jitsi-privacy-badge[data-privacy="bars"],
+.narrow-filter .jitsi-call-glyph .jitsi-privacy-badge[data-privacy="speaker"] {
+    width: 0.92em;
+    height: 0.92em;
+    padding: 0.02em;
 }
 
 /* The channel's privacy glyph, in the bottom-right corner of the speaker: a lock
@@ -210,4 +236,249 @@
 .jitsi-sidebar-count {
     font-size: 0.6875em; /* 11px at 16px/em */
     opacity: 0.8;
+}
+
+/* A lounge's rooms, listed beneath it while it is open. Indented to the same
+   column as a channel's occupant avatars, so the sidebar has one hierarchy
+   rather than two competing ones. */
+.jitsi-lounge-rooms {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 1px 6px 5px 26px;
+}
+
+/* The row itself is not a control: it shows who is in the room, and joining is
+   the call button at its end. */
+.jitsi-lounge-room {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    min-width: 0;
+}
+
+.jitsi-lounge-room:hover {
+    background-color: var(--color-background-tab-hover, hsl(0deg 0% 0% / 8%));
+}
+
+/* A locked room stays legible and stays in the list -- visible but locked is the
+   whole design -- and only reads as not-for-you. It carries no call button. */
+.jitsi-lounge-room.locked {
+    opacity: 0.65;
+}
+
+.jitsi-lounge-room.locked:hover {
+    background-color: transparent;
+}
+
+/* The join control and, for whoever runs the room, the settings cog beside it.
+   Both behave like the call button on channel and DM rows: out of the way until
+   you are looking at the row, so a list of rooms reads as people rather than as
+   a column of buttons. */
+.jitsi-lounge-room-call-button,
+.jitsi-lounge-room-settings-button {
+    display: none;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-sidebar-action);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.jitsi-lounge-room:hover .jitsi-lounge-room-call-button,
+.jitsi-lounge-room:focus-within .jitsi-lounge-room-call-button,
+.jitsi-lounge-room:hover .jitsi-lounge-room-settings-button,
+.jitsi-lounge-room:focus-within .jitsi-lounge-room-settings-button {
+    display: flex;
+}
+
+.jitsi-lounge-room-call-button:hover,
+.jitsi-lounge-room-settings-button:hover {
+    color: var(--color-sidebar-action-hover, inherit);
+    background-color: var(
+        --color-background-sidebar-action-hover,
+        hsl(0deg 0% 0% / 12%)
+    );
+}
+
+.jitsi-lounge-room-call-button:focus-visible,
+.jitsi-lounge-room-settings-button:focus-visible {
+    display: flex;
+    outline: 2px solid var(--color-outline-focus);
+}
+
+/* Quieter than the join control beside it: changing the door policy is a rarer
+   thing to want than getting into the room, and the two should not read as
+   equals. */
+.jitsi-lounge-room-settings-button {
+    font-size: 0.875em;
+    opacity: 0.75;
+}
+
+/* Asking to be let in, in the slot the join control would occupy on a room you
+   could enter, so the row answers "what can I do here" in the same place. Unlike
+   the join control it stays visible on a locked row: a room you may ask about is
+   not a room with nothing to do. */
+.jitsi-lounge-room-knock-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875em;
+    color: var(--color-sidebar-action);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.jitsi-lounge-room-knock-button:hover {
+    color: var(--color-sidebar-action-hover, inherit);
+    background-color: var(
+        --color-background-sidebar-action-hover,
+        hsl(0deg 0% 0% / 12%)
+    );
+}
+
+.jitsi-lounge-room-knock-button:focus-visible {
+    outline: 2px solid var(--color-outline-focus);
+}
+
+/* Already asked: it reports rather than invites, so it stops behaving like a
+   button. Asking again while the first ask still stands achieves nothing. */
+.jitsi-lounge-room-knock-button.asked {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.jitsi-lounge-room-knock-button.asked:hover {
+    background-color: transparent;
+}
+
+/* A room whose door is shut for want of a moderator. Deliberately NOT styled
+   like .locked: that one is shut to you and stays shut, this one is shut to
+   everyone until somebody who runs the room arrives, and the two must not read
+   as the same problem. So the row keeps its normal weight and simply carries a
+   clock where the join control would be. */
+.jitsi-lounge-room-waiting {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875em;
+    color: var(--color-text-sidebar-action-heading);
+    opacity: 0.8;
+    cursor: default;
+}
+
+.jitsi-lounge-room.waiting-for-moderator:hover {
+    background-color: transparent;
+}
+
+/* Same rule on a voice channel row, where the call button is in the template
+   rather than drawn by us: hide it outright. A channel is not "locked" -- you
+   can still read it -- so nothing else about the row changes. */
+.narrow-filter.jitsi-call-closed .jitsi-sidebar-call-button {
+    display: none !important;
+}
+
+/* Somebody waiting to be let in, listed beneath the people already inside
+   because that is where they are: at the door, not in the room. Dimmed for the
+   same reason -- they are not present yet. */
+.jitsi-lounge-knocker {
+    opacity: 0.7;
+}
+
+.jitsi-lounge-knocker:hover {
+    opacity: 1;
+}
+
+/* Always visible rather than revealed on hover, unlike every other control in
+   this sidebar: somebody is waiting on it, and a control you have to go looking
+   for is one that leaves them waiting. */
+.jitsi-lounge-admit-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    font-size: 0.875em;
+    color: var(--color-sidebar-action);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.jitsi-lounge-admit-button:hover {
+    color: var(--color-sidebar-action-hover, inherit);
+    background-color: var(
+        --color-background-sidebar-action-hover,
+        hsl(0deg 0% 0% / 12%)
+    );
+}
+
+.jitsi-lounge-admit-button:focus-visible {
+    outline: 2px solid var(--color-outline-focus);
+}
+
+.jitsi-lounge-room-glyph {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    color: var(--color-text-sidebar-action-heading);
+}
+
+.jitsi-lounge-room-glyph > svg {
+    width: 100%;
+    height: 100%;
+}
+
+.jitsi-lounge-room-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    font-size: 0.8125em; /* 13px at 16px/em */
+    color: var(--color-text-default, inherit);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The people in a room, listed beneath it one per line, exactly as a channel
+   with a live call lists its own -- the same question asked in the same place,
+   so it gets the same answer. Indented past the room's glyph so the names hang
+   off the room rather than off the lounge. */
+.jitsi-lounge-room-occupants {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 2px 6px 4px 22px;
+}
+
+/* The ordinary state of a lounge, not a failure, so it is stated plainly.
+   Starting a room is the plus button on the row above, not here. */
+.jitsi-lounge-empty {
+    font-size: 0.75em; /* 12px at 16px/em */
+    padding: 2px 4px;
+    color: var(--color-text-sidebar-action-heading);
+}
+
+/* The room settings dialog. Not sidebar chrome, but it belongs with the rest of
+   the lounge styling rather than in a file of its own. */
+.lounge-room-invited-container {
+    margin-top: 10px;
+}
+
+.lounge-room-invited-hint {
+    margin-top: 4px;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+/* The name a visitor with no account joins under. */
+.guest-call-name-hint {
+    margin-top: 4px;
+    font-size: 0.85em;
+    opacity: 0.75;
 }

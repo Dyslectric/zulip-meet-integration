@@ -1302,33 +1302,60 @@ export function is_empty_topic_only_channel(stream_id: number | undefined): bool
     );
 }
 
-// Whether a channel offers calls. A web-public channel never does, whatever its
-// own setting says: a call is for a known set of people, and anyone on the
-// internet can read such a channel. The server refuses to mint a token for one,
-// so this keeps the client from advertising what it would refuse.
-// Whether the channel is a voice channel. Calls exist only on voice channels,
-// so this is both "is a voice channel" and "may have calls" — there is no
-// channel that allows calls without being one. Web-public channels are excluded
-// whatever their setting says: anyone on the internet can read one, so the
-// server refuses to mint a call token for it.
+// Whether the channel is a voice channel. Calls exist only on voice channels, so
+// this is both "is a voice channel" and "may have calls" — there is no channel
+// that allows calls without being one.
+//
+// Web-public channels are deliberately included. A web-public voice channel is
+// open to whoever can see it, unauthenticated visitors included; whether that is
+// wanted is the channel administrator's decision, expressed by whether they make
+// it web-public at all.
 export function channel_is_voice_channel(sub: StreamSubscription): boolean {
-    return sub.voice_video_enabled && !sub.is_web_public;
+    return sub.voice_video_enabled;
 }
 
 // Kept as the name the call-affordance code reads, since "can I start a call
 // here" is the question it is asking.
 export const channel_allows_calls = channel_is_voice_channel;
 
-// A voice channel that carries no text at all: no compose box, no topics, and
-// nothing stored. There is nothing to narrow to in one, so every route into it
-// has to be closed off, not just the sidebar row. Gated on
-// channel_is_voice_channel because text_chat_disabled is only meaningful on one,
-// and a stale value must not strand a channel nobody can open.
+// Whether the channel is a lounge: a channel whose conversations are ephemeral
+// rooms rather than topics. Web-public lounges are allowed, on the same terms as
+// web-public voice channels.
+export function channel_is_lounge(sub: StreamSubscription): boolean {
+    return sub.is_lounge;
+}
+
+// The three mutually exclusive kinds a channel can be. Stored as two independent
+// booleans because that is how they grew, one at a time; this is the single
+// choice they actually add up to, and what the settings UI offers.
+export type ChannelKind = "text" | "voice" | "lounge";
+
+export function get_channel_kind(sub: StreamSubscription): ChannelKind {
+    if (channel_is_voice_channel(sub)) {
+        return "voice";
+    }
+    if (channel_is_lounge(sub)) {
+        return "lounge";
+    }
+    return "text";
+}
+
+// A channel that carries no text at all: no compose box, no topics, and nothing
+// stored. There is nothing to narrow to in one, so every route into it has to be
+// closed off, not just the sidebar row.
+//
+// Two kinds of channel answer to this. A voice channel that has had its text
+// switched off is one, gated on channel_is_voice_channel because
+// text_chat_disabled is only meaningful on one and a stale value must not strand
+// a channel nobody can open. A lounge is the other, and unconditionally: it
+// keeps its conversations in rooms, so there was never any text to switch off.
+//
+// Lounges route through here deliberately rather than through closures of their
+// own. Every entry into a view — a pasted URL, the search box, the cycling
+// hotkeys, the sidebar row — already asks this one question, so answering it for
+// lounges closes all of them at once, including whatever gets added next.
 export function channel_has_no_text_chat(sub: StreamSubscription): boolean {
-    // Coerced rather than returned raw: this value is passed straight into a
-    // template context, and an undefined from a sub that predates the field
-    // would read differently there than a false.
-    return Boolean(sub.text_chat_disabled) && channel_is_voice_channel(sub);
+    return (sub.text_chat_disabled && channel_is_voice_channel(sub)) || channel_is_lounge(sub);
 }
 
 /*

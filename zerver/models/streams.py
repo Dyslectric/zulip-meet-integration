@@ -30,6 +30,35 @@ class StreamTopicsPolicyEnum(Enum):
     empty_topic_only = 4
 
 
+class CallDoorPolicyEnum(Enum):
+    """Who must already be in a call before anyone else may come in.
+
+    A door policy, never a kill switch: it is checked when a token is minted and
+    at no other time, so the people already talking are never turned out. Whoever
+    holds the door open is also never refused by it, or a channel could never
+    have a first person in it.
+
+    Ordered by how much they ask for, which is also how they are offered.
+    """
+
+    #: No doorman. Anyone who may reach the channel may join its call, whenever
+    #: they like — including an anonymous visitor on a web-public one. The
+    #: default, and what every channel did before this setting existed.
+    anarchy = 1
+
+    #: Somebody who moderates the call must be in it. The strictest of the three:
+    #: a conversation here does not happen unattended, and once the last
+    #: moderator leaves the door shuts behind them.
+    moderator = 2
+
+    #: Somebody with a Zulip account must be in it. Aimed squarely at web-public
+    #: channels, where it means visitors may join a conversation that members are
+    #: having but cannot start one among themselves. Weaker than requiring a
+    #: moderator and much less work to satisfy — any member holds the door — and
+    #: it never refuses an account holder, so its whole effect is on visitors.
+    authenticated_user = 3
+
+
 class Stream(models.Model):
     MAX_NAME_LENGTH = 60
     MAX_DESCRIPTION_LENGTH = 1024
@@ -136,6 +165,10 @@ class Stream(models.Model):
     can_create_topic_group = models.ForeignKey(
         UserGroup, on_delete=models.RESTRICT, related_name="+"
     )
+    # Who may start a room in a lounge; see stream_permission_group_settings.
+    can_create_rooms_group = models.ForeignKey(
+        UserGroup, on_delete=models.RESTRICT, related_name="+"
+    )
     can_delete_any_message_group = models.ForeignKey(
         UserGroup, on_delete=models.RESTRICT, related_name="+"
     )
@@ -180,6 +213,33 @@ class Stream(models.Model):
     # the alternative to being single-threaded, and the server keeps it that way.
     text_chat_disabled = models.BooleanField(default=False, db_default=False)
 
+    # Whether this is a lounge: a channel whose conversations are ephemeral
+    # rooms rather than topics. A room exists only while someone is in it, so a
+    # lounge stores nothing — no messages, no topics, no compose box — and an
+    # idle one is empty.
+    #
+    # Mutually exclusive with voice_video_enabled, and the server keeps it that
+    # way. A voice channel is one channel with one room that is always there; a
+    # lounge is one channel with many rooms that are not. Both are "you talk
+    # here", which is why they cannot be the same channel at once.
+    is_lounge = models.BooleanField(default=False, db_default=False)
+
+    #: Who has to already be in a call here before anyone else may come in. See
+    #: CallDoorPolicyEnum.
+    #:
+    #: Whichever policy is chosen, it is a rule about the *door*: it is checked
+    #: when somebody asks to come in, and never reaches into a call to remove
+    #: anyone. Once the doorman leaves, nobody new may enter and the people
+    #: already talking carry on — because ending a conversation somebody is
+    #: having is a worse failure than letting it finish unattended.
+    #:
+    #: Only meaningful on a voice channel or a lounge; an ordinary text channel
+    #: has no calls for it to govern.
+    call_door_policy = models.PositiveSmallIntegerField(
+        default=CallDoorPolicyEnum.anarchy.value,
+        db_default=CallDoorPolicyEnum.anarchy.value,
+    )
+
     stream_permission_group_settings = {
         "can_add_subscribers_group": GroupPermissionSetting(
             allow_nobody_group=True,
@@ -192,6 +252,16 @@ class Stream(models.Model):
             default_group_name="channel_creator",
         ),
         "can_create_topic_group": GroupPermissionSetting(
+            allow_nobody_group=True,
+            allow_everyone_group=True,
+            default_group_name=SystemGroups.EVERYONE,
+        ),
+        # Who may start a room in a lounge. Deliberately separate from who may
+        # subscribe: a lounge can reasonably be one where everyone listens and a
+        # few convene, and tying the two together would force that choice to be
+        # made by excluding people from the lounge itself. Everyone by default,
+        # which is the ordinary case.
+        "can_create_rooms_group": GroupPermissionSetting(
             allow_nobody_group=True,
             allow_everyone_group=True,
             default_group_name=SystemGroups.EVERYONE,
@@ -297,6 +367,7 @@ class Stream(models.Model):
         "can_add_subscribers_group_id",
         "can_administer_channel_group_id",
         "can_create_topic_group_id",
+        "can_create_rooms_group_id",
         "can_delete_any_message_group_id",
         "can_delete_own_message_group_id",
         "can_move_messages_out_of_channel_group_id",
@@ -309,11 +380,85 @@ class Stream(models.Model):
         "topics_policy",
         "voice_video_enabled",
         "text_chat_disabled",
+        "is_lounge",
+        "call_door_policy",
     ]
 
 
 post_save.connect(flush_stream, sender=Stream)
 post_delete.connect(flush_stream, sender=Stream)
+
+
+class LoungeRoom(models.Model):
+    """A room inside a lounge: a conversation that lasts only as long as it is had.
+
+    Not a topic and not a message. A room keeps no history, so this row is the
+    whole of it, and the row is deleted when the last person leaves. That is what
+    makes "an idle lounge is empty" cost nothing to represent: there is nothing
+    left behind to hide.
+
+    It lives here rather than in the conferencing service because of the two
+    questions it exists to answer — may this user join, and are they a moderator
+    in here — and both are answered where subscriptions are. Neither can afford a
+    network round trip at the moment a token is minted, and neither should be
+    decided by a process that cannot see who is subscribed to what.
+    """
+
+    MAX_NAME_LENGTH = 60
+
+    #: Always a Stream with is_lounge set; a room in anything else is meaningless.
+    channel = models.ForeignKey(Stream, on_delete=CASCADE, related_name="lounge_rooms")
+    name = models.CharField(max_length=MAX_NAME_LENGTH)
+
+    #: Nullable so deactivating the creator does not take the room down with
+    #: them; the people still in it keep talking, and it reaps itself as usual.
+    #: Losing the creator loses their moderator claim, which is the correct
+    #: outcome rather than a hole: a room with no moderator is what a room
+    #: started by nobody should be.
+    creator = models.ForeignKey(UserProfile, null=True, on_delete=models.SET_NULL, related_name="+")
+
+    #: Visible but locked. Everyone who can see the lounge sees that this room
+    #: exists and who is in it; only those allowed may join. Showing it is the
+    #: point — a lounge is an ambient-presence surface, and people vanishing into
+    #: rooms nobody can see would defeat what it is for.
+    is_private = models.BooleanField(default=False, db_default=False)
+
+    #: Whether somebody refused entry may ask for it. Two switches rather than
+    #: one because the two populations are not comparable: a colleague who wants
+    #: in is a different proposition from an outside collaborator on a guest
+    #: account, and a room may reasonably want the first without the second.
+    #: Neither means anything on a public room, where nobody is refused, and
+    #: neither is about anonymous visitors: admitting somebody means adding them
+    #: to `invited_users`, and a visitor with no account cannot be in it.
+    knockable_by_users = models.BooleanField(default=True, db_default=True)
+    knockable_by_guests = models.BooleanField(default=False, db_default=False)
+
+    #: People let in individually. The set dies with the room, which is the point:
+    #: admitting somebody is a decision about this conversation, not a standing
+    #: relationship, and there is nothing to revoke afterwards.
+    invited_users = models.ManyToManyField(UserProfile, related_name="+")
+
+    date_created = models.DateTimeField(default=timezone_now)
+
+    #: When somebody was first actually inside, as reported by the conferencing
+    #: service. Null means the room was started and never entered, which is a
+    #: different thing from empty-after-use and is reaped on a timer rather than
+    #: on the report that empties it — there is no such report for a room Prosody
+    #: never saw.
+    first_joined_at = models.DateTimeField(null=True, default=None)
+
+    #: How long a room that was never joined is kept before being reaped. Long
+    #: enough to cover a slow client finishing its handshake, short enough that
+    #: an abandoned "start a room" does not sit in the sidebar advertising a
+    #: conversation that is not happening.
+    UNJOINED_GRACE_SECONDS = 120
+
+    class Meta:
+        indexes = [models.Index(fields=["channel"])]
+
+    @override
+    def __str__(self) -> str:
+        return f"{self.channel.name} / {self.name}"
 
 
 def get_realm_stream(stream_name: str, realm_id: int) -> Stream:

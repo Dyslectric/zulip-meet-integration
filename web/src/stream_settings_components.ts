@@ -516,6 +516,7 @@ export function set_channel_creation_privacy_widget(widget: DropdownWidget): voi
 const new_stream_group_setting_widget_map = new Map<string, GroupSettingPillContainer | null>([
     ["can_add_subscribers_group", null],
     ["can_administer_channel_group", null],
+    ["can_create_rooms_group", null],
     ["can_create_topic_group", null],
     ["can_delete_any_message_group", null],
     ["can_delete_own_message_group", null],

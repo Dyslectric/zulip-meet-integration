@@ -50,6 +50,10 @@ exports.make_stream = (opts = {}) => {
         subscribed: true,
         topics_policy: "inherit",
         voice_video_enabled: true,
+        text_chat_disabled: false,
+        is_lounge: false,
+        call_door_policy: "anarchy",
+        can_create_rooms_group: 2,
         wildcard_mentions_notify: false,
         folder_id: null,
     };

@@ -18,6 +18,7 @@ from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import Message, UserMessage, UserProfile, WebPushSubscription
 from zerver.models.scheduled_jobs import NotificationTriggers
 
+
 def _generate_vapid_private_key() -> str:
     key = ec.generate_private_key(ec.SECP256R1())
     pem = key.private_bytes(

@@ -73,6 +73,19 @@
       prefix=prefix
       help_link="/help/configure-who-can-start-new-topics" }}
 
+    {{! A lounge's counterpart of "who can start new topics", and hidden with
+    everything else: a lounge is the only kind of channel with rooms to start.
+    Deliberately separate from who may subscribe — a lounge where everyone
+    listens and a few convene is a reasonable thing to want, and tying the two
+    together would force that to be expressed by keeping people out of the
+    lounge itself. }}
+    <div class="create-rooms-group-setting{{#unless (lookup sub "is_lounge")}} hide{{/unless}}">
+        {{> ../settings/group_setting_value_pill_input
+          setting_name="can_create_rooms_group"
+          label=group_setting_labels.can_create_rooms_group
+          prefix=prefix }}
+    </div>
+
     {{! A channel property, so it belongs to this subsection's save/discard
     widget rather than to the personal settings, whose change handler only
     accepts subscription properties. Only offered when editing: a new
@@ -80,41 +93,54 @@
     {{! On the creation form there is no `sub` yet, so the checkbox reflects what
     the server would do anyway: a new channel allows calls. `(not is_stream_edit)`
     is how that default is expressed without a sub to read it from. }}
-    <div class="voice-video-enabled">
-            {{#if (lookup sub "is_web_public")}}
-                {{! Anyone on the internet can read a web-public channel, so it
-                    cannot have calls; offering the checkbox would only produce
-                    an error. }}
-                {{> ../settings/settings_checkbox
-                  prefix=prefix
-                  setting_name="voice_video_enabled"
-                  is_checked=false
-                  is_disabled=true
-                  label=(t "Make this a voice channel")
-                  tooltip_message=(t "Web-public channels cannot be voice channels, because anyone on the internet can read them.")
-                  }}
-            {{else}}
-                {{! Calls exist only on voice channels, so this one checkbox is
-                both "is a voice channel" and "may have calls". Opt-in: it shows
-                the channel as a speaker and pins it single-threaded. }}
-                {{> ../settings/settings_checkbox
-                  prefix=prefix
-                  setting_name="voice_video_enabled"
-                  is_checked=(lookup sub "voice_video_enabled")
-                  label=(t "Make this a voice channel")
-                  }}
-                {{! A voice channel is either single-threaded or has no text at
-                all; this is the switch between the two. Only meaningful on a
-                voice channel, so it hides with it. }}
-                <div class="text-chat-disabled-setting{{#unless (lookup sub "voice_video_enabled")}} hide{{/unless}}">
-                    {{> ../settings/settings_checkbox
-                      prefix=prefix
-                      setting_name="text_chat_disabled"
-                      is_checked=(lookup sub "text_chat_disabled")
-                      label=(t "Disable text chat in this channel")
-                      }}
-                </div>
-            {{/if}}
+    {{! What kind of channel this is. The three are mutually exclusive — a text
+    channel has topics; a voice channel is one room that is always there, with a
+    single thread of text beside it or none at all; a lounge is many rooms, none
+    of which outlast the people in them — so this is one control rather than a
+    checkbox each, which is what let you ask for two at once. It rides the normal
+    save/discard machinery under a synthetic property name and expands into
+    voice_video_enabled and is_lounge on the way out; see settings_data. }}
+    <div class="channel-kind-setting input-group">
+        <label for="{{prefix}}channel_kind" class="settings-field-label">{{t "Channel kind"}}</label>
+        <select name="channel-kind-setting" id="{{prefix}}channel_kind" class="prop-element settings_select bootstrap-focus-style" data-setting-widget-type="string">
+            <option value="text" {{#unless (or (lookup sub "voice_video_enabled") (lookup sub "is_lounge"))}}selected{{/unless}}>{{t "Text channel" }}</option>
+            <option value="voice" {{#if (lookup sub "voice_video_enabled")}}selected{{/if}}>{{t "Voice channel" }}</option>
+            <option value="lounge" {{#if (lookup sub "is_lounge")}}selected{{/if}}>{{t "Lounge" }}</option>
+        </select>
+        {{! A web-public voice channel or lounge is open to whoever can see it,
+        unauthenticated visitors included. Said plainly, because it is the one
+        combination whose consequences are not obvious from the two words. }}
+        {{#if (lookup sub "is_web_public")}}
+        <div class="settings-field-hint">{{t "This channel is web-public: anyone on the internet can see it, and can join its calls without an account." }}</div>
+        {{/if}}
+        {{! A voice channel is either single-threaded or has no text at all; this
+        is the switch between the two. Only meaningful on a voice channel, so it
+        hides with anything else — a lounge does not get it, because it stores no
+        text in the first place and so has nothing to switch off. }}
+        <div class="text-chat-disabled-setting{{#unless (lookup sub "voice_video_enabled")}} hide{{/unless}}">
+            {{> ../settings/settings_checkbox
+              prefix=prefix
+              setting_name="text_chat_disabled"
+              is_checked=(lookup sub "text_chat_disabled")
+              label=(t "Disable text chat in this channel")
+              }}
+        </div>
+        {{! Who has to already be in a call before anyone else may come in. A door
+        policy, not a kill switch: once the doorman leaves nobody new may enter,
+        and the people already talking are never cut off. Only meaningful where
+        there are calls, so it hides on a text channel.
+
+        Offered only when editing, like the channel-kind controls above and for
+        the same reason: the creation form does not send it, so a control here
+        would quietly do nothing. A new channel starts at anarchy. }}
+        {{#if is_stream_edit}}
+        <div class="call-door-policy-setting{{#unless (or (lookup sub "voice_video_enabled") (lookup sub "is_lounge"))}} hide{{/unless}}">
+            <label for="{{prefix}}call_door_policy" class="settings-field-label">{{t "Who must be in a call for others to join"}}</label>
+            <select name="call-door-policy-setting" id="{{prefix}}call_door_policy" class="prop-element settings_select bootstrap-focus-style" data-setting-widget-type="string">
+                {{> ../settings/dropdown_options_widget option_values=(object_values call_door_policy_values)}}
+            </select>
+        </div>
+        {{/if}}
     </div>
 
     <div class="input-group">

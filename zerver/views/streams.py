@@ -114,7 +114,7 @@ from zerver.lib.users import access_bot_by_id, bulk_access_users_by_email, bulk_
 from zerver.lib.utils import assert_is_not_none
 from zerver.models import ChannelFolder, Stream, UserMessage, UserProfile, UserTopic
 from zerver.models.groups import SystemGroups
-from zerver.models.streams import StreamTopicsPolicyEnum
+from zerver.models.streams import CallDoorPolicyEnum, StreamTopicsPolicyEnum
 from zerver.models.users import get_system_bot
 
 
@@ -274,6 +274,17 @@ ChannelDescription = Annotated[
 ]
 
 
+CallDoorPolicy = Annotated[
+    str | None,
+    AfterValidator(
+        lambda val: parse_enum_from_string_value(
+            val,
+            "call_door_policy",
+            CallDoorPolicyEnum,
+        )
+    ),
+]
+
 TopicsPolicy = Annotated[
     str | None,
     AfterValidator(
@@ -292,6 +303,7 @@ def update_stream_backend(
     user_profile: UserProfile,
     *,
     can_add_subscribers_group: Json[GroupSettingChangeRequest] | None = None,
+    can_create_rooms_group: Json[GroupSettingChangeRequest] | None = None,
     can_create_topic_group: Json[GroupSettingChangeRequest] | None = None,
     can_administer_channel_group: Json[GroupSettingChangeRequest] | None = None,
     can_delete_any_message_group: Json[GroupSettingChangeRequest] | None = None,
@@ -308,10 +320,12 @@ def update_stream_backend(
     history_public_to_subscribers: Json[bool] | None = None,
     is_archived: Json[bool] | None = None,
     is_default_stream: Json[bool] | None = None,
+    is_lounge: Json[bool] | None = None,
     is_private: Json[bool] | None = None,
     is_web_public: Json[bool] | None = None,
     message_retention_days: Json[str] | Json[int] | None = None,
     new_name: str | None = None,
+    call_door_policy: CallDoorPolicy = None,
     stream_id: PathOnly[int],
     text_chat_disabled: Json[bool] | None = None,
     topics_policy: TopicsPolicy = None,
@@ -371,8 +385,20 @@ def update_stream_backend(
     # visitors can read does not get one. Asking for both in the same request is
     # a contradiction and is refused; making a channel web-public when it happens
     # to allow calls is not, and simply turns them off below.
-    if voice_video_enabled and proposed_is_web_public:
-        raise JsonableError(_("Web-public channels cannot have voice and video calls enabled."))
+    # A web-public voice channel or lounge is allowed, and its calls are open to
+    # unauthenticated visitors. This used to be refused on the grounds that a call
+    # is for a known set of people; the decision now is that whoever administers
+    # the channel gets to say otherwise, and web-publicness is the switch they use
+    # to open and close it. Anyone who can see such a channel can be heard in it,
+    # so it is deliberately an explicit, revocable act rather than a default.
+    proposed_is_lounge = is_lounge if is_lounge is not None else stream.is_lounge
+
+    # A voice channel is one room that is always there; a lounge is many rooms
+    # that are not. Both answer "you talk here", so a channel is at most one of
+    # them. Asking for both at once is a contradiction and is refused; turning a
+    # voice channel into a lounge is not, and simply drops the voice below.
+    if voice_video_enabled and proposed_is_lounge:
+        raise JsonableError(_("A channel cannot be both a voice channel and a lounge."))
 
     # Ensure that a moderation request channel isn't set to public.
     if not proposed_is_private and user_profile.realm.moderation_request_channel == stream:
@@ -414,16 +440,21 @@ def update_stream_backend(
     # someone saving its settings.
     proposed_is_voice_channel = (
         voice_video_enabled if voice_video_enabled is not None else stream.voice_video_enabled
-    ) and not proposed_is_web_public
+    ) and not proposed_is_lounge
 
     validated_topics_policy = validate_topics_policy(topics_policy, user_profile, stream)
-    if proposed_is_voice_channel:
+    if proposed_is_voice_channel or proposed_is_lounge:
         if (
             validated_topics_policy is not None
             and validated_topics_policy != StreamTopicsPolicyEnum.empty_topic_only
         ):
+            # A lounge has no topics for a different reason than a voice channel
+            # does — its conversations are rooms, not one long thread — so it
+            # says so in its own words.
             raise JsonableError(
-                _("Voice channels are single-threaded. Disable voice and video to use topics.")
+                _("Lounges have no topics: a conversation in one is a room.")
+                if proposed_is_lounge
+                else _("Voice channels are single-threaded. Disable voice and video to use topics.")
             )
         # Deliberately bypasses validate_topics_policy's refusal to convert a
         # channel that already has named topics: those topics keep their
@@ -488,14 +519,22 @@ def update_stream_backend(
             stream, "default_push_notifications", default_push_notifications, user_profile
         )
 
-    if voice_video_enabled is not None:
-        # Metadata access (checked above) is the bar here, same as the other
-        # channel settings: whoever can administer the channel decides.
-        # The web-public contradiction is already refused above.
-        if proposed_is_voice_channel != stream.voice_video_enabled:
-            do_set_stream_property(
-                stream, "voice_video_enabled", proposed_is_voice_channel, user_profile
-            )
+    # Metadata access (checked above) is the bar for both of these, same as the
+    # other channel settings: whoever can administer the channel decides. The
+    # contradictions between them are already refused above.
+    #
+    # Neither is guarded on its own parameter being present, because a channel
+    # can stop being one kind by being made another: becoming a lounge or going
+    # web-public ends a voice channel, and going web-public ends a lounge. The
+    # row has to follow in those cases too, and comparing against the stored
+    # value keeps this a no-op for every request that changes neither.
+    if proposed_is_voice_channel != stream.voice_video_enabled:
+        do_set_stream_property(
+            stream, "voice_video_enabled", proposed_is_voice_channel, user_profile
+        )
+
+    if proposed_is_lounge != stream.is_lounge:
+        do_set_stream_property(stream, "is_lounge", proposed_is_lounge, user_profile)
 
     # Switching text chat off is only meaningful on a voice channel — it is the
     # alternative to being single-threaded. Ceasing to be one restores text chat
@@ -509,6 +548,26 @@ def update_stream_backend(
         do_set_stream_property(
             stream, "text_chat_disabled", proposed_text_chat_disabled, user_profile
         )
+
+    # A door policy only makes sense where there is a call to have one about, and
+    # it falls back to anarchy on a channel that stops being a place calls happen
+    # — for the same reason text chat comes back: a stale rule waiting to reappear
+    # if the channel is ever made a voice channel again is a surprise nobody
+    # asked for.
+    has_calls = proposed_is_voice_channel or proposed_is_lounge
+    if (
+        call_door_policy is not None
+        and call_door_policy != CallDoorPolicyEnum.anarchy
+        and not has_calls
+    ):
+        raise JsonableError(_("A call door policy can only be set on a voice channel or a lounge."))
+    proposed_door_policy = (
+        call_door_policy.value if call_door_policy is not None else stream.call_door_policy
+    )
+    if not has_calls:
+        proposed_door_policy = CallDoorPolicyEnum.anarchy.value
+    if proposed_door_policy != stream.call_door_policy:
+        do_set_stream_property(stream, "call_door_policy", proposed_door_policy, user_profile)
 
     if is_archived is not None and not is_archived:
         do_unarchive_stream(stream, stream.name, acting_user=user_profile)
@@ -751,6 +810,7 @@ def create_channel(
     *,
     announce: Json[bool] = False,
     can_add_subscribers_group: Json[int | UserGroupMembersData] | None = None,
+    can_create_rooms_group: Json[int | UserGroupMembersData] | None = None,
     can_create_topic_group: Json[int | UserGroupMembersData] | None = None,
     can_delete_any_message_group: Json[int | UserGroupMembersData] | None = None,
     can_delete_own_message_group: Json[int | UserGroupMembersData] | None = None,
@@ -892,6 +952,7 @@ def add_subscriptions_backend(
     can_delete_any_message_group: Json[int | UserGroupMembersData] | None = None,
     can_delete_own_message_group: Json[int | UserGroupMembersData] | None = None,
     can_administer_channel_group: Json[int | UserGroupMembersData] | None = None,
+    can_create_rooms_group: Json[int | UserGroupMembersData] | None = None,
     can_create_topic_group: Json[int | UserGroupMembersData] | None = None,
     can_move_messages_out_of_channel_group: Json[int | UserGroupMembersData] | None = None,
     can_move_messages_within_channel_group: Json[int | UserGroupMembersData] | None = None,
@@ -904,6 +965,7 @@ def add_subscriptions_backend(
     history_public_to_subscribers: Json[bool] | None = None,
     invite_only: Json[bool] = False,
     is_default_stream: Json[bool] = False,
+    is_lounge: Json[bool] = False,
     is_web_public: Json[bool] = False,
     message_retention_days: Json[str] | Json[int] = RETENTION_DEFAULT,
     principals: Json[list[str] | list[int]] | None = None,
@@ -951,26 +1013,33 @@ def add_subscriptions_backend(
         if validated_topics_policy is not None:
             stream_dict_copy["topics_policy"] = validated_topics_policy.value
 
-        # Same rules as editing a channel. Voice is opt-in, so an ordinary
+        # Same rules as editing a channel. Both kinds are opt-in, so an ordinary
         # channel creation is untouched by any of this.
-        proposed_is_voice_channel = bool(voice_video_enabled) and not is_web_public
-        if voice_video_enabled and is_web_public:
-            raise JsonableError(
-                _("Web-public channels cannot be voice channels, because they cannot have calls.")
-            )
+        # A web-public voice channel or lounge is allowed; see the note on the
+        # same decision in update_stream_backend. Whoever administers the channel
+        # decides whether unauthenticated visitors can be in its calls.
+        proposed_is_lounge = bool(is_lounge)
+        proposed_is_voice_channel = bool(voice_video_enabled) and not proposed_is_lounge
+        if voice_video_enabled and is_lounge:
+            raise JsonableError(_("A channel cannot be both a voice channel and a lounge."))
         if text_chat_disabled and not proposed_is_voice_channel:
             raise JsonableError(_("Text chat can only be disabled on a voice channel."))
-        if proposed_is_voice_channel:
+        if proposed_is_voice_channel or proposed_is_lounge:
             if (
                 validated_topics_policy is not None
                 and validated_topics_policy != StreamTopicsPolicyEnum.empty_topic_only
             ):
                 raise JsonableError(
-                    _("Voice channels are single-threaded. Disable voice and video to use topics.")
+                    _("Lounges have no topics: a conversation in one is a room.")
+                    if proposed_is_lounge
+                    else _(
+                        "Voice channels are single-threaded. Disable voice and video to use topics."
+                    )
                 )
             stream_dict_copy["topics_policy"] = StreamTopicsPolicyEnum.empty_topic_only.value
         stream_dict_copy["voice_video_enabled"] = proposed_is_voice_channel
         stream_dict_copy["text_chat_disabled"] = text_chat_disabled and proposed_is_voice_channel
+        stream_dict_copy["is_lounge"] = proposed_is_lounge
 
         stream_dict_copy["folder"] = folder
         stream_dict_copy["default_push_notifications"] = default_push_notifications

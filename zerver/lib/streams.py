@@ -58,6 +58,7 @@ from zerver.models import (
 from zerver.models.groups import SystemGroups, get_realm_system_groups_name_dict
 from zerver.models.realm_audit_logs import AuditLogEventType
 from zerver.models.streams import (
+    CallDoorPolicyEnum,
     StreamTopicsPolicyEnum,
     bulk_get_streams,
     get_realm_stream,
@@ -95,8 +96,10 @@ class StreamDict(TypedDict, total=False):
     topics_policy: int | None
     voice_video_enabled: bool | None
     text_chat_disabled: bool | None
+    is_lounge: bool | None
     can_add_subscribers_group: UserGroup | None
     can_administer_channel_group: UserGroup | None
+    can_create_rooms_group: UserGroup | None
     can_create_topic_group: UserGroup | None
     can_delete_any_message_group: UserGroup | None
     can_delete_own_message_group: UserGroup | None
@@ -381,8 +384,10 @@ def create_stream_if_needed(
     topics_policy: int | None = None,
     voice_video_enabled: bool | None = None,
     text_chat_disabled: bool = False,
+    is_lounge: bool = False,
     can_add_subscribers_group: UserGroup | None = None,
     can_administer_channel_group: UserGroup | None = None,
+    can_create_rooms_group: UserGroup | None = None,
     can_create_topic_group: UserGroup | None = None,
     can_delete_any_message_group: UserGroup | None = None,
     can_delete_own_message_group: UserGroup | None = None,
@@ -438,14 +443,18 @@ def create_stream_if_needed(
             folder=folder,
             topics_policy=topics_policy,
             # Opt-in: a channel is an ordinary text channel unless asked for
-            # otherwise. Calls are for a known set of people, so a channel
-            # readable by unauthenticated visitors can never be a voice one.
-            voice_video_enabled=bool(voice_video_enabled) and not is_web_public,
+            # otherwise. A web-public one may be a voice channel or a lounge —
+            # whoever administers it decides whether unauthenticated visitors may
+            # be in its calls, and web-publicness is the switch they use.
+            voice_video_enabled=bool(voice_video_enabled) and not is_lounge,
             # Only ever meaningful on a voice channel; the caller is responsible
             # for having pinned topics_policy to empty_topic_only in that case.
-            text_chat_disabled=text_chat_disabled
-            and bool(voice_video_enabled)
-            and not is_web_public,
+            text_chat_disabled=text_chat_disabled and bool(voice_video_enabled) and not is_lounge,
+            # A lounge keeps its conversations in ephemeral rooms, so it stores no
+            # text. The view refuses the voice/lounge contradiction outright;
+            # resolving it here too keeps a caller that goes around the view from
+            # writing a row that is two kinds of channel at once.
+            is_lounge=is_lounge,
             **group_setting_values,
         ),
     )
@@ -524,8 +533,10 @@ def create_streams_if_needed(
             topics_policy=stream_dict.get("topics_policy", None),
             voice_video_enabled=stream_dict.get("voice_video_enabled", None),
             text_chat_disabled=stream_dict.get("text_chat_disabled", None) or False,
+            is_lounge=stream_dict.get("is_lounge", None) or False,
             can_add_subscribers_group=stream_dict.get("can_add_subscribers_group", None),
             can_administer_channel_group=stream_dict.get("can_administer_channel_group", None),
+            can_create_rooms_group=stream_dict.get("can_create_rooms_group", None),
             can_create_topic_group=stream_dict.get("can_create_topic_group", None),
             can_delete_any_message_group=stream_dict.get("can_delete_any_message_group", None),
             can_delete_own_message_group=stream_dict.get("can_delete_own_message_group", None),
@@ -1732,6 +1743,7 @@ def list_to_streams(
             stream_dict["can_administer_channel_group"] = group_settings_map[
                 "can_administer_channel_group"
             ]
+            stream_dict["can_create_rooms_group"] = group_settings_map["can_create_rooms_group"]
             stream_dict["can_create_topic_group"] = group_settings_map["can_create_topic_group"]
             stream_dict["can_delete_any_message_group"] = group_settings_map[
                 "can_delete_any_message_group"
@@ -1843,6 +1855,9 @@ def stream_to_dict(
     can_administer_channel_group = get_group_setting_value_for_register_api(
         stream.can_administer_channel_group_id, anonymous_group_membership
     )
+    can_create_rooms_group = get_group_setting_value_for_register_api(
+        stream.can_create_rooms_group_id, anonymous_group_membership
+    )
     can_create_topic_group = get_group_setting_value_for_register_api(
         stream.can_create_topic_group_id, anonymous_group_membership
     )
@@ -1878,6 +1893,7 @@ def stream_to_dict(
     return APIStreamDict(
         can_add_subscribers_group=can_add_subscribers_group,
         can_administer_channel_group=can_administer_channel_group,
+        can_create_rooms_group=can_create_rooms_group,
         can_create_topic_group=can_create_topic_group,
         can_delete_any_message_group=can_delete_any_message_group,
         can_delete_own_message_group=can_delete_own_message_group,
@@ -1909,6 +1925,8 @@ def stream_to_dict(
         topics_policy=StreamTopicsPolicyEnum(stream.topics_policy).name,
         voice_video_enabled=stream.voice_video_enabled,
         text_chat_disabled=stream.text_chat_disabled,
+        is_lounge=stream.is_lounge,
+        call_door_policy=CallDoorPolicyEnum(stream.call_door_policy).name,
     )
 
 

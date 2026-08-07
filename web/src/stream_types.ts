@@ -13,6 +13,7 @@ export type StreamPostPolicy = (typeof StreamPostPolicy)[keyof typeof StreamPost
 export const stream_permission_group_settings_schema = z.enum([
     "can_add_subscribers_group",
     "can_administer_channel_group",
+    "can_create_rooms_group",
     "can_create_topic_group",
     "can_delete_any_message_group",
     "can_delete_own_message_group",
@@ -55,7 +56,10 @@ export const stream_schema = z.object({
     history_public_to_subscribers: z.boolean(),
     invite_only: z.boolean(),
     is_announcement_only: z.boolean(),
+    can_create_rooms_group: group_setting_value_schema,
     is_archived: z.boolean(),
+    is_lounge: z.boolean(),
+    call_door_policy: z.string(),
     is_recently_active: z.boolean(),
     is_web_public: z.boolean(),
     message_retention_days: z.nullable(z.number()),

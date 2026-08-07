@@ -244,27 +244,22 @@ $("body").on("click", ".advanced-configurations-container .advance-config-toggle
 // Stores the previous state of the stream creation checkbox.
 let stream_announce_previous_value: boolean;
 
-// Anyone on the internet can read a web-public channel, so it cannot host
-// calls — the server refuses to mint a token for one. Choosing web-public in
-// the creation form therefore switches voice off and locks the checkbox, the
-// same way the edit form disables it for an already-web-public channel.
+// A web-public channel may be any of the three kinds. It used to be forced back
+// to text, on the grounds that a call is for a known set of people; the decision
+// now is that whoever administers a channel decides whether unauthenticated
+// visitors can be in its calls, and web-publicness is how they say so.
+//
+// Kept as a function because the topics policy still has to be reconciled when
+// the kind changes, and the privacy widget is one of the things that can change
+// it indirectly.
 function update_voice_video_state(): void {
-    const is_web_public =
-        stream_settings_components.channel_creation_privacy_widget.value() === "web-public";
-    const $voice = $<HTMLInputElement>("#id_new_voice_video_enabled");
-    if ($voice.length === 0) {
+    const $kind = $<HTMLSelectElement>("#id_new_channel_kind");
+    if ($kind.length === 0) {
         return;
     }
-    if (is_web_public) {
-        $voice.prop("checked", false);
-    }
-    $voice.prop("disabled", is_web_public);
-    $voice
-        .closest(".settings-checkbox-wrapper")
-        .toggleClass("control-label-disabled", is_web_public);
     // Let the shared handler reconcile the text-chat checkbox and the topics
-    // policy with whatever state the voice-channel checkbox has ended up in.
-    $voice.trigger("change");
+    // policy with whatever kind the dropdown is on.
+    $kind.trigger("change");
 }
 
 // Within the new stream modal...
@@ -398,14 +393,13 @@ function create_stream(): void {
 
     const topics_policy = $("#id_new_topics_policy").val();
 
-    // A web-public channel cannot host calls, so both are forced off for one
-    // regardless of what the (disabled) inputs say. Text chat can only be
-    // switched off on a voice channel; the server enforces all of this too.
-    const voice_video_enabled =
-        !is_web_public && util.the($<HTMLInputElement>("#id_new_voice_video_enabled")).checked;
+    // Any kind may be web-public. Text chat can only be switched off on a voice
+    // channel; the server enforces that too.
+    const channel_kind = util.the($<HTMLSelectElement>("#id_new_channel_kind")).value;
+    const voice_video_enabled = channel_kind === "voice";
+    const is_lounge = channel_kind === "lounge";
     const text_chat_disabled =
-        voice_video_enabled &&
-        util.the($<HTMLInputElement>("#id_new_text_chat_disabled")).checked;
+        voice_video_enabled && util.the($<HTMLInputElement>("#id_new_text_chat_disabled")).checked;
 
     const data: Record<string, string> = {
         subscriptions,
@@ -418,6 +412,7 @@ function create_stream(): void {
         topics_policy: JSON.stringify(topics_policy),
         voice_video_enabled: JSON.stringify(voice_video_enabled),
         text_chat_disabled: JSON.stringify(text_chat_disabled),
+        is_lounge: JSON.stringify(is_lounge),
         principals,
         ...group_setting_values,
     };
@@ -564,6 +559,10 @@ export function show_new_stream_modal(): void {
     if (!stream_data.user_can_set_topics_policy()) {
         $("#id_new_topics_policy").prop("disabled", true);
     }
+
+    // The form is reused between creations, so the kind has to be put back or a
+    // lounge made once would be the default for every channel made after it.
+    $("#id_new_channel_kind").val("text").trigger("change");
 
     if (!stream_data.user_can_set_delete_message_policy()) {
         settings_components.disable_group_permission_setting(

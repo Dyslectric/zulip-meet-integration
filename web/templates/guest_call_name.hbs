@@ -1,0 +1,12 @@
+{{! Asked once per visit. Optional on purpose: a web-public channel is one whose
+point is not requiring an identity, so refusing entry until somebody supplies a
+name would be asking for one by the back door. }}
+<div class="guest-call-name-container">
+    <label for="guest_call_name_input" class="modal-field-label">
+        {{t "What should we call you?" }}
+    </label>
+    <input type="text" id="guest_call_name_input" class="modal_text_input" name="guest_call_name" maxlength="40" />
+    <div class="guest-call-name-hint">
+        {{t "Everyone in the call will see this name, marked as a guest's." }}
+    </div>
+</div>

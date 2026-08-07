@@ -340,6 +340,30 @@ type StreamTopicsPolicyValues = {
     empty_topic_only: PolicyValue;
 } & RealmTopicsPolicyValues;
 
+// Who must already be in a call before anyone else may come in. Ordered by how
+// much each asks for, so the list reads as a dial from open to strict rather
+// than as three unrelated options.
+//
+// The descriptions say what each does rather than naming the mechanism: an
+// administrator choosing between these is deciding who may be in a conversation,
+// not learning what a "doorman" is.
+export const get_call_door_policy_values = (): Record<string, PolicyValue> => ({
+    anarchy: {
+        code: "anarchy",
+        description: $t({defaultMessage: "Anyone, at any time"}),
+    },
+    authenticated_user: {
+        code: "authenticated_user",
+        description: $t({
+            defaultMessage: "Someone with an account must be in the call",
+        }),
+    },
+    moderator: {
+        code: "moderator",
+        description: $t({defaultMessage: "A moderator must be in the call"}),
+    },
+});
+
 export const get_realm_topics_policy_values = (): RealmTopicsPolicyValues => {
     const empty_topic_name = util.get_final_topic_display_name("");
 
@@ -843,6 +867,9 @@ export const all_group_setting_labels = {
         can_resolve_topics_group: $t({
             defaultMessage: "Who can resolve topics in this channel",
         }),
+        can_create_rooms_group: $t({
+            defaultMessage: "Who can start a room in this lounge",
+        }),
     },
     group: {
         can_add_members_group: $t({defaultMessage: "Who can add members to this group"}),
@@ -951,6 +978,11 @@ export const stream_group_permission_settings: StreamGroupSettingName[] = [
     "can_delete_any_message_group",
     "can_delete_own_message_group",
     "can_administer_channel_group",
+    // Only meaningful on a lounge, where it says who may start a room.
+    // Deliberately separate from who may subscribe: a lounge where everyone
+    // listens and a few convene is a reasonable thing to want, and tying the two
+    // together would force that to be expressed by keeping people out.
+    "can_create_rooms_group",
 ];
 
 export const stream_group_permission_settings_requiring_content_access: StreamGroupSettingName[] = [
