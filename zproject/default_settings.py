@@ -211,6 +211,17 @@ JITSI_ROOM_KEY = get_secret("jitsi_room_key")
 # the first matching group in sorted order wins.
 JITSI_DEFAULT_TENANT: str | None = None
 JITSI_TENANT_BY_GROUP: dict[str, str] = {}
+# The companion conferencing service, which owns call state and occupancy.
+# Unset disables every call out to it: calls are still minted and joinable, but
+# nothing tracks who is in one, so the call-aware sidebar stays empty and no
+# roster message is posted for a direct message.
+JITSI_CONFERENCING_URL: str | None = None
+# Bearer secret for that service, shared with Prosody's event_sync component.
+# Empty can never match a well-formed header, so an unconfigured deployment
+# refuses the service's callbacks rather than trusting them.
+JITSI_CONFERENCING_SECRET = get_secret("jitsi_conferencing_secret", "")
+# Topic a direct-message call's roster message is posted under.
+JITSI_CALL_TOPIC = "Calls"
 
 # GIPHY API key.
 GIPHY_API_KEY = get_secret("giphy_api_key")

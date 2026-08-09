@@ -914,7 +914,7 @@ def notify_conferencing_service(
     possible for a channel or lounge-room call, which the service records without
     authoring anything — nothing here needs a Zulip account to attribute.
     """
-    url = getattr(settings, "JITSI_CONFERENCING_URL", None)
+    url = settings.JITSI_CONFERENCING_URL
     if not url:
         return
     participants = None
@@ -937,11 +937,9 @@ def notify_conferencing_service(
                 "lounge_room_id": lounge_room_id,
                 "initiator_id": initiator_id,
                 "initiator_name": initiator_name,
-                "topic": getattr(settings, "JITSI_CALL_TOPIC", "Calls"),
+                "topic": settings.JITSI_CALL_TOPIC,
             },
-            headers={
-                "Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"
-            },
+            headers={"Authorization": f"Bearer {settings.JITSI_CONFERENCING_SECRET}"},
             timeout=2,
             proxies={"http": None, "https": None},
         )
@@ -1383,16 +1381,14 @@ def get_jitsi_occupancy(
     access_stream_by_id(user, stream_id)  # entitlement: raises if no access
 
     empty = {"stream_id": stream_id, "active": False, "count": 0, "occupants": [], "drifted": False}
-    url = getattr(settings, "JITSI_CONFERENCING_URL", None)
+    url = settings.JITSI_CONFERENCING_URL
     if not url:
         return json_success(request, empty)
     try:
         response = requests.get(
             url.rstrip("/") + "/api/v1/jitsi/occupancy",
             params={"stream_id": stream_id},
-            headers={
-                "Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"
-            },
+            headers={"Authorization": f"Bearer {settings.JITSI_CONFERENCING_SECRET}"},
             proxies={"http": None, "https": None},
             timeout=2,
         )
@@ -1436,15 +1432,13 @@ def get_jitsi_occupancy_all(
     # mint would then refuse, which is the exact confusion this field exists to
     # prevent.
     empty: dict[str, Any] = {"rooms": [], "closed_channel_ids": closed_channel_ids(user, realm)}
-    url = getattr(settings, "JITSI_CONFERENCING_URL", None)
+    url = settings.JITSI_CONFERENCING_URL
     if not url:
         return json_success(request, empty)
     try:
         response = requests.get(
             url.rstrip("/") + "/api/v1/jitsi/occupancy_all",
-            headers={
-                "Authorization": f"Bearer {getattr(settings, 'JITSI_CONFERENCING_SECRET', '')}"
-            },
+            headers={"Authorization": f"Bearer {settings.JITSI_CONFERENCING_SECRET}"},
             proxies={"http": None, "https": None},
             timeout=2,
         )

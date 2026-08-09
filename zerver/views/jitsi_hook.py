@@ -88,7 +88,7 @@ def _authorized(request: HttpRequest) -> bool:
     edge. An empty configured secret can never match a well-formed header, so a
     misconfigured deployment fails closed.
     """
-    expected = getattr(settings, "JITSI_CONFERENCING_SECRET", "") or ""
+    expected = settings.JITSI_CONFERENCING_SECRET
     header = request.headers.get("Authorization", "")
     prefix = "Bearer "
     if not expected or not header.startswith(prefix):

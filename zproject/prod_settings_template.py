@@ -829,6 +829,21 @@ SOCIAL_AUTH_SAML_SUPPORT_CONTACT = {
 # JITSI_DEFAULT_TENANT = "engineering"
 # JITSI_TENANT_BY_GROUP = {"conf-engineering": "engineering", "conf-design": "design"}
 
+## Optional: the companion conferencing service, which owns call state and
+## occupancy. Without it calls are still minted and joinable, but nothing knows
+## who is in one: the call-aware sidebar stays empty and no roster message is
+## posted for a direct-message call. It must be reachable from both Zulip and
+## Prosody on an internal network.
+# JITSI_CONFERENCING_URL = "http://conferencing:8080"
+## Set `jitsi_conferencing_secret` in zulip-secrets.conf to the same value as
+## the service's EVENT_SYNC_SECRET, which is also the bearer Prosody's
+## event_sync component sends. It authenticates both directions of that edge:
+## Zulip's calls to the service, and the service's calls back into Zulip's
+## internal hook. Unset, the hook refuses every request rather than trusting it.
+##
+## The topic a direct-message call's roster message is posted under.
+# JITSI_CALL_TOPIC = "Calls"
+
 ## Controls the BigBlueButton video call integration.  You must also
 ## set big_blue_button_secret in zulip-secrets.conf.
 # BIG_BLUE_BUTTON_URL = "https://bbb.example.com/bigbluebutton/"
