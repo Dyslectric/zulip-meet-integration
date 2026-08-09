@@ -14,6 +14,8 @@
 
 import * as z from "zod/mini";
 
+import * as feedback_widget from "./feedback_widget.ts";
+import {$t} from "./i18n.ts";
 import * as jitsi_sidebar from "./jitsi_sidebar.ts";
 
 // Minimal shape of the External API we use. The real object has far more; we type
@@ -138,6 +140,63 @@ async function load_external_api(origin: string): Promise<void> {
     }
 }
 
+// -- reachability ------------------------------------------------------------
+
+// Whether the meet origin will actually load in a frame.
+//
+// This exists for the one failure the External API cannot report. A browser does
+// not prompt about an untrusted certificate inside an iframe — it refuses the
+// frame silently — so a meet server the browser will not trust makes the call
+// button do nothing whatsoever: no error, no panel, nothing but a console line.
+// That is the resting state of a fresh local deployment, whose certificate comes
+// from a private CA nobody has trusted yet, and of any private-CA install.
+//
+// A cross-origin `no-cors` fetch is the check. It resolves opaquely whenever the
+// server answers at all, and rejects on a transport failure — a rejected
+// certificate included — so the answer is known before the frame is built rather
+// than inferred from a timeout afterwards.
+//
+// One caveat for anyone adding a Content-Security-Policy to Zulip (there is none
+// today outside the uploads endpoints): this fetch needs the meet origin in
+// `connect-src`, or the probe fails on a deployment whose frames load fine.
+async function meet_origin_is_reachable(origin: string): Promise<boolean> {
+    try {
+        await fetch(`${origin}/external_api.js`, {mode: "no-cors"});
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// Say why the call did not open, and what to do about it.
+//
+// Follows `report_call_refusal` in guest_call.ts, for the reason set out there: a
+// control that silently does nothing teaches the user only that it is broken.
+// This failure in particular is one they can clear in about ten seconds, but only
+// if they are told which page to open.
+function report_unreachable_meet_origin(origin: string): void {
+    feedback_widget.show({
+        title_text: $t({defaultMessage: "Cannot start the call"}),
+        populate($container) {
+            const link = document.createElement("a");
+            link.href = origin;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = origin;
+            $container.text(
+                $t({
+                    defaultMessage:
+                        "Your browser would not connect to the video server. Open it once and accept the certificate warning, then start the call again:",
+                }),
+            );
+            // Native append, not jQuery's: it takes nodes and plain text, and
+            // cannot be handed a string of markup to parse.
+            $container.get(0)?.append(" ", link);
+        },
+        hide_delay: 10000,
+    });
+}
+
 // -- the persistent container ------------------------------------------------
 
 // Built once, lives at document.body for the life of the page. Everything is
@@ -204,13 +263,21 @@ export async function start_embedded_call(
 ): Promise<void> {
     const {domain, origin, room_name, jwt} = parse_jitsi_url(raw_url);
 
+    if (current !== null && current.url === raw_url) {
+        current.label = options.label ?? current.label;
+        restore_call(); // same call: bring it back into view
+        update_label();
+        return;
+    }
+
+    // Asked before anything is torn down, so a meet origin the browser will
+    // refuse does not also end the call the user is currently in.
+    if (!(await meet_origin_is_reachable(origin))) {
+        report_unreachable_meet_origin(origin);
+        return;
+    }
+
     if (current !== null) {
-        if (current.url === raw_url) {
-            current.label = options.label ?? current.label;
-            restore_call(); // same call: bring it back into view
-            update_label();
-            return;
-        }
         // Single active call (v1): starting a call in another conversation
         // replaces the current one. A confirm-dialog prompt (Zulip's
         // confirm_dialog) is a future nicety; for now the old call is left.
