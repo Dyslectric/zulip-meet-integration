@@ -11,27 +11,27 @@ from zerver.models import UserProfile, WebPushSubscription
 def manifest_webmanifest(request: HttpRequest) -> JsonResponse:
     """Serve the PWA web app manifest.
 
-    This makes Zulip installable to a home screen / desktop (``display:
+    This makes Consort installable to a home screen / desktop (``display:
     standalone``) and gives the app a stable root ``scope`` under which a
     service worker can be registered for Web Push notifications.
     """
     manifest = {
-        "name": "Zulip",
-        "short_name": "Zulip",
+        "name": "Consort",
+        "short_name": "Consort",
         "start_url": "/",
         "scope": "/",
         "display": "standalone",
         "background_color": "#ffffff",
-        "theme_color": "#ffffff",
+        "theme_color": "#0d9488",
         "icons": [
             {
-                "src": staticfiles_storage.url("images/logo/zulip-icon-512x512.png"),
+                "src": staticfiles_storage.url("images/logo/consort-icon-512x512.png"),
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": staticfiles_storage.url("images/logo/zulip-icon-square.svg"),
+                "src": staticfiles_storage.url("images/logo/consort-icon-square.svg"),
                 "sizes": "any",
                 "type": "image/svg+xml",
                 "purpose": "maskable",
@@ -46,7 +46,7 @@ def manifest_webmanifest(request: HttpRequest) -> JsonResponse:
 # tree, so this cannot be read from a file on disk. Push-only: no fetch handler
 # and no caching, so it can't interfere with Zulip's asset pipeline.
 SERVICE_WORKER_JS = """\
-/* Zulip Web Push service worker. Payloads come from
+/* Consort Web Push service worker. Payloads come from
  * zerver.lib.push_notifications:
  *   add:    {type: "add", title, body, url, tag, message_id, icon?}
  *   remove: {type: "remove", message_ids: [...]}
@@ -77,7 +77,7 @@ self.addEventListener("push", (event) => {
         return;
     }
 
-    const title = payload.title ?? "Zulip";
+    const title = payload.title ?? "Consort";
     const options = {
         body: payload.body ?? "",
         icon: payload.icon,
