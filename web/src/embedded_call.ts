@@ -294,7 +294,32 @@ export async function start_embedded_call(
         roomName: room_name,
         jwt,
         parentNode: frame_node(),
-        configOverwrite: {prejoinPageEnabled: false},
+        // Both spellings, because they belong to different eras of jitsi-meet
+        // and an unrecognised config key is ignored in silence. `prejoinConfig`
+        // is the current one; `prejoinPageEnabled` was replaced by it and is
+        // inert on a recent build, which is how the prejoin screen stayed on
+        // here long after it was supposedly turned off.
+        //
+        // It matters more than a skipped screen: prejoin runs its own
+        // getUserMedia for the device previews, before the conference is
+        // joined, so a refused camera surfaces there — "You need to enable
+        // microphone and camera access" — instead of reaching the join, where
+        // Jitsi would otherwise carry on without video.
+        //
+        // The camera is never on by arriving. Joining a conversation is not
+        // consent to be seen in it, and a call that starts broadcasting your
+        // room the instant you click is the behaviour people quietly resent.
+        // Audio is left alone: being heard is what joining a call is for, and
+        // the mute button is right there.
+        //
+        // `startWithVideoMuted` is the local one. `startVideoMuted` — no
+        // "with" — is a different setting entirely, muting everyone after the
+        // Nth participant, and jitsi's own config calls the pair confusing.
+        configOverwrite: {
+            prejoinConfig: {enabled: false},
+            prejoinPageEnabled: false,
+            startWithVideoMuted: true,
+        },
     });
 
     current = {
