@@ -176,7 +176,20 @@ def build_page_params_for_home_page_load(
         test_suite=settings.TEST_SUITE,
         insecure_desktop_app=insecure_desktop_app,
         login_page=settings.HOME_NOT_LOGGED_IN,
-        warn_no_email=settings.WARN_NO_EMAIL,
+        # Never, in Consort. Running with no outgoing email is a supported
+        # configuration here rather than an unfinished one: logins are SAML, so
+        # there are no address confirmations and no password resets to send,
+        # accounts arrive through the identity provider's enrollment flow, and
+        # the notifications this warning promises are delivered by web push
+        # instead. The banner therefore tells an administrator to go and repair
+        # something that is not broken, on every page load, for ever.
+        #
+        # The setting behind it is deliberately left alone. `send_test_email`
+        # reads the same flag to refuse outright, and that refusal is worth
+        # keeping: a test command that reports success while delivering into the
+        # dummy backend would be worse than one that admits there is nowhere to
+        # send.
+        warn_no_email=False,
         # Only show marketing email settings if on Zulip Cloud
         corporate_enabled=settings.CORPORATE_ENABLED,
         ## Misc. extra data.
