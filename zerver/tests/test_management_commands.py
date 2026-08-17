@@ -23,7 +23,7 @@ from zerver.actions.user_settings import do_change_user_setting
 from zerver.lib.management import ZulipBaseCommand, skip_unless_locked
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.lib.test_helpers import most_recent_message, stdout_suppressed
-from zerver.models import Realm, RealmAuditLog, Recipient, UserProfile
+from zerver.models import Realm, RealmAuditLog, RealmUserDefault, Recipient, UserProfile
 from zerver.models.realm_audit_logs import AuditLogEventType
 from zerver.models.realms import get_realm
 from zerver.models.streams import get_stream
@@ -938,3 +938,69 @@ class TestUserChangeNotifications(ZulipTestCase):
             realm_id=realm.id, recipient__type_id=bot.id
         ).count()
         self.assertEqual(bot_messages_before, bot_messages_after)
+
+
+class TestBulkChangeUserSetting(ZulipTestCase):
+    COMMAND_NAME = "bulk_change_user_setting"
+
+    def test_sets_realm_default_and_leaves_existing_users_alone(self) -> None:
+        realm = get_realm("zulip")
+        hamlet = self.example_user("hamlet")
+        self.assertTrue(hamlet.enable_online_push_notifications)
+
+        with stdout_suppressed():
+            call_command(
+                self.COMMAND_NAME,
+                "enable_online_push_notifications",
+                "False",
+                f"--realm={realm.string_id}",
+            )
+
+        realm_user_default = RealmUserDefault.objects.get(realm=realm)
+        self.assertFalse(realm_user_default.enable_online_push_notifications)
+
+        # The default is only read when an account is created, so anyone who
+        # already exists keeps what they had until asked for explicitly.
+        hamlet.refresh_from_db()
+        self.assertTrue(hamlet.enable_online_push_notifications)
+
+    def test_existing_users_flag_changes_humans_but_not_bots(self) -> None:
+        realm = get_realm("zulip")
+        hamlet = self.example_user("hamlet")
+        bot = self.example_user("default_bot")
+        self.assertTrue(hamlet.enable_online_push_notifications)
+        self.assertTrue(bot.enable_online_push_notifications)
+
+        with stdout_suppressed():
+            call_command(
+                self.COMMAND_NAME,
+                "enable_online_push_notifications",
+                "False",
+                f"--realm={realm.string_id}",
+                "--existing-users",
+            )
+
+        hamlet.refresh_from_db()
+        self.assertFalse(hamlet.enable_online_push_notifications)
+
+        # A bot has no session and no device, so there is nothing for a
+        # notification setting to mean.
+        bot.refresh_from_db()
+        self.assertTrue(bot.enable_online_push_notifications)
+
+    def test_rejects_unknown_setting(self) -> None:
+        realm = get_realm("zulip")
+        with self.assertRaisesRegex(CommandError, "is not a user setting"):
+            call_command(
+                self.COMMAND_NAME, "not_a_setting", "False", f"--realm={realm.string_id}"
+            )
+
+    def test_rejects_non_boolean_value_for_boolean_setting(self) -> None:
+        realm = get_realm("zulip")
+        with self.assertRaisesRegex(CommandError, "is not a boolean"):
+            call_command(
+                self.COMMAND_NAME,
+                "enable_online_push_notifications",
+                "sometimes",
+                f"--realm={realm.string_id}",
+            )
