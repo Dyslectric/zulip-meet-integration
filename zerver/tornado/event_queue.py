@@ -43,9 +43,10 @@ from zerver.tornado.handlers import finish_handler, get_handler_by_id, handler_s
 # situation, queues from dead browser sessions would grow quite large
 # due to the accumulation of message data in those queues.
 DEFAULT_EVENT_QUEUE_TIMEOUT_SECS = 60 * 10
-# We garbage-collect every minute; this is totally fine given that the
-# GC scan takes ~2ms with 1000 event queues.
-EVENT_QUEUE_GC_FREQ_MSECS = 1000 * 60 * 1
+# How often the GC pass runs. Cheap -- the scan takes ~2ms with 1000 event
+# queues -- and it is what notices a client has gone offline, so it also sets
+# how promptly that is acted on. Configurable via EVENT_QUEUE_GC_FREQ_SECS.
+EVENT_QUEUE_GC_FREQ_MSECS = 1000 * settings.EVENT_QUEUE_GC_FREQ_SECS
 
 # Capped limit for how long a client can request an event queue
 # to live
@@ -54,7 +55,8 @@ MAX_QUEUE_TIMEOUT_SECS = 7 * 24 * 60 * 60
 # How long a client must go without polling before it is
 # considered offline. Once offline, the missedmessage_hook
 # is called to potentially send push/email notifications.
-EVENT_QUEUE_OFFLINE_TIMEOUT_SECS = 60 * 10
+# Configurable via EVENT_QUEUE_OFFLINE_TIMEOUT_SECS.
+EVENT_QUEUE_OFFLINE_TIMEOUT_SECS = settings.EVENT_QUEUE_OFFLINE_TIMEOUT_SECS
 
 # Queue timeout for mobile clients.
 MOBILE_EVENT_QUEUE_TIMEOUT_SECS = 12 * 60 * 60
@@ -64,7 +66,12 @@ MOBILE_EVENT_QUEUE_TIMEOUT_SECS = 12 * 60 * 60
 # client connection based on the below value.  We ensure that the
 # maximum timeout value is 55 seconds, to deal with crappy home
 # wireless routers that kill "inactive" http connections.
-HEARTBEAT_MIN_FREQ_SECS = 45
+#
+# This is also the clock a client is judged offline against, since the
+# reconnect it forces is the only sign the client is still there. Configurable
+# via EVENT_QUEUE_HEARTBEAT_MIN_FREQ_SECS; lowering it is what makes a shorter
+# EVENT_QUEUE_OFFLINE_TIMEOUT_SECS safe.
+HEARTBEAT_MIN_FREQ_SECS = settings.EVENT_QUEUE_HEARTBEAT_MIN_FREQ_SECS
 
 
 def create_heartbeat_event() -> dict[str, str]:

@@ -1758,3 +1758,34 @@ class OfflineEventQueueTest(ZulipTestCase):
         # Values above the max are capped.
         client = self.allocate_queue(hamlet, queue_timeout=MAX_QUEUE_TIMEOUT_SECS + 1000)
         self.assertEqual(client.queue_timeout, MAX_QUEUE_TIMEOUT_SECS)
+
+
+class EventQueueTimingSettingsTest(ZulipTestCase):
+    def test_timings_come_from_settings(self) -> None:
+        # These were literals upstream. A deployment tunes them to decide how
+        # long a locked phone waits for its notifications, which only works
+        # while they are read from settings -- and a rebase that restores the
+        # literals would put the delay back to ten minutes with nothing else
+        # looking any different.
+        from django.conf import settings
+
+        from zerver.tornado.event_queue import EVENT_QUEUE_GC_FREQ_MSECS, HEARTBEAT_MIN_FREQ_SECS
+
+        self.assertEqual(
+            EVENT_QUEUE_OFFLINE_TIMEOUT_SECS, settings.EVENT_QUEUE_OFFLINE_TIMEOUT_SECS
+        )
+        self.assertEqual(EVENT_QUEUE_GC_FREQ_MSECS, 1000 * settings.EVENT_QUEUE_GC_FREQ_SECS)
+        self.assertEqual(
+            HEARTBEAT_MIN_FREQ_SECS, settings.EVENT_QUEUE_HEARTBEAT_MIN_FREQ_SECS
+        )
+
+    def test_offline_timeout_clears_the_heartbeat_interval(self) -> None:
+        # The heartbeat reconnect is the only evidence a client is still there,
+        # and it is jittered up to 10s past the minimum, so a timeout below
+        # that mark declares connected clients gone between heartbeats.
+        from django.conf import settings
+
+        self.assertGreater(
+            settings.EVENT_QUEUE_OFFLINE_TIMEOUT_SECS,
+            settings.EVENT_QUEUE_HEARTBEAT_MIN_FREQ_SECS + 10,
+        )

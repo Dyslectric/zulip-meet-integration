@@ -659,6 +659,24 @@ PRESENCE_PING_INTERVAL_SECS = 60
 # disabled.
 USER_LIMIT_FOR_SENDING_PRESENCE_UPDATE_EVENTS = 100
 
+# How long after a client stops polling before the server decides it is gone
+# and fires missedmessage_hook, which is what turns messages received in the
+# meantime into notifications. Until then the user still counts as "on Zulip",
+# so this is the delay on notifying someone whose phone locked or whose laptop
+# suspended -- any ending that gave the client no chance to say goodbye.
+#
+# The three belong together. A connection is recycled by a heartbeat every
+# EVENT_QUEUE_HEARTBEAT_MIN_FREQ_SECS to +10 seconds, and that reconnect is the
+# only thing telling the server a client is still there, so an offline timeout
+# which does not clear the longest heartbeat interval declares live clients
+# gone. The GC pass is what notices, so it sets the granularity: detection
+# lands between the timeout and the timeout plus one GC interval.
+#
+# Upstream's values, which favour a quiet server over a prompt notification.
+EVENT_QUEUE_OFFLINE_TIMEOUT_SECS = 60 * 10
+EVENT_QUEUE_GC_FREQ_SECS = 60
+EVENT_QUEUE_HEARTBEAT_MIN_FREQ_SECS = 45
+
 # Controls the how much newer a user presence update needs to be
 # than the currently saved last_active_time or last_connected_time in order for us to
 # update the database state. E.g. If set to 0, we will do
