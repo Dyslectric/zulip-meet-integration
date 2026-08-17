@@ -1,5 +1,6 @@
 import * as z from "zod/mini";
 
+import * as blueslip from "./blueslip.ts";
 import * as channel from "./channel.ts";
 
 // Web Push subscription flow. Runs on load: if the user has already granted
@@ -49,7 +50,12 @@ async function save_subscription(subscription: PushSubscription): Promise<void> 
             success() {
                 resolve();
             },
-            error() {
+            error(xhr) {
+                // The browser is subscribed but the server does not know, so
+                // this device is silent and nothing else will say why.
+                blueslip.warn("Could not save the Web Push subscription", {
+                    status: xhr.status,
+                });
                 resolve();
             },
         });
@@ -117,19 +123,37 @@ export async function subscribe(): Promise<void> {
     let registration;
     try {
         registration = await navigator.serviceWorker.register("/service-worker.js");
-    } catch {
-        // Registration can fail on insecure origins or if the browser blocks
-        // it; there's nothing actionable to do here.
+    } catch (error) {
+        // Nothing here can recover -- an insecure origin or a browser that
+        // refuses workers is not something the page can talk its way out of --
+        // but say so anyway. Every path in this function ends in "notifications
+        // simply never arrive", which is indistinguishable from a quiet server
+        // unless the reason is written down somewhere.
+        blueslip.warn("Could not register the Web Push service worker", {
+            reason: String(error),
+        });
         return;
     }
 
     listen_for_subscription_changes();
 
     let subscription = await registration.pushManager.getSubscription();
-    subscription ??= await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: url_base64_to_uint8_array(config.vapid_public_key),
-    });
+    if (subscription === null) {
+        try {
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: url_base64_to_uint8_array(config.vapid_public_key),
+            });
+        } catch (error) {
+            // Browsers refuse for reasons the permission property does not
+            // predict, and iOS is the awkward one: permission can read
+            // "granted" in a home-screen app that still will not subscribe.
+            // Unreported, this leaves a device that looks configured and
+            // receives nothing.
+            blueslip.warn("Could not subscribe to Web Push", {reason: String(error)});
+            return;
+        }
+    }
 
     await save_subscription(subscription);
 }
