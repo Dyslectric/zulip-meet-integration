@@ -50,6 +50,12 @@ SERVICE_WORKER_JS = """\
  * zerver.lib.push_notifications:
  *   add:    {type: "add", title, body, url, tag, message_id, icon?}
  *   remove: {type: "remove", message_ids: [...]}
+ *
+ * A "remove" deliberately displays nothing, which WebKit treats as breaking the
+ * userVisibleOnly promise and eventually answers by revoking the subscription.
+ * The sender therefore never routes one to an Apple endpoint; see
+ * send_web_push_notifications. Keep it that way if this handler grows another
+ * branch that can finish without calling showNotification.
  */
 self.addEventListener("push", (event) => {
     if (!event.data) {

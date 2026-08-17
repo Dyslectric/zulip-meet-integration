@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from email.headerregistry import Address
 from functools import cache
 from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeAlias, Union, cast
+from urllib.parse import urlsplit
 
 import lxml.html
 import orjson
@@ -216,8 +217,18 @@ def send_web_push_notifications(user_profile: UserProfile, payload: dict[str, An
     vapid = Vapid.from_pem(base64.b64decode(settings.VAPID_PRIVATE_KEY))
     data = orjson.dumps(payload)
 
+    # A "remove" push closes notifications the user has already read elsewhere;
+    # by design it shows nothing new. Chrome tolerates a push that displays
+    # nothing. WebKit does not: it treats the userVisibleOnly promise as binding,
+    # substitutes a notification of its own, and revokes the subscription of a
+    # worker that keeps doing it. Losing the subscription costs far more than a
+    # read message lingering on a lock screen, so Apple simply does not get these.
+    is_remove = payload.get("type") == "remove"
+
     stale_subscription_ids: list[int] = []
     for subscription in subscriptions:
+        if is_remove and urlsplit(subscription.endpoint).hostname == "web.push.apple.com":
+            continue
         try:
             webpush(
                 subscription_info={

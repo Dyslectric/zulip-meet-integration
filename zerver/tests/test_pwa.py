@@ -163,6 +163,33 @@ class WebPushSenderTest(ZulipTestCase):
         # Not a 404/410, so the subscription is kept.
         self.assertTrue(WebPushSubscription.objects.filter(id=sub.id).exists())
 
+    def test_remove_skips_apple_endpoints(self) -> None:
+        # A "remove" displays nothing, and WebKit revokes the subscription of a
+        # worker that keeps accepting a push without showing one. Apple is left
+        # out of these; every other push service still gets them.
+        hamlet = self.example_user("hamlet")
+        self._subscribe(hamlet, endpoint="https://web.push.apple.com/sub/1")
+        self._subscribe(hamlet, endpoint="https://fcm.googleapis.com/sub/2")
+        with self.settings(**VAPID_TEST_SETTINGS), mock.patch("pywebpush.webpush") as webpush_mock:
+            send_web_push_notifications(hamlet, {"type": "remove", "message_ids": [1]})
+        endpoints = [
+            call.kwargs["subscription_info"]["endpoint"] for call in webpush_mock.call_args_list
+        ]
+        self.assertEqual(endpoints, ["https://fcm.googleapis.com/sub/2"])
+
+    def test_add_still_reaches_apple_endpoints(self) -> None:
+        # The exclusion above is specific to pushes that display nothing. An
+        # ordinary notification must still reach Apple.
+        hamlet = self.example_user("hamlet")
+        self._subscribe(hamlet, endpoint="https://web.push.apple.com/sub/1")
+        with self.settings(**VAPID_TEST_SETTINGS), mock.patch("pywebpush.webpush") as webpush_mock:
+            send_web_push_notifications(hamlet, {"type": "add", "title": "T", "body": "B"})
+        webpush_mock.assert_called_once()
+        self.assertEqual(
+            webpush_mock.call_args.kwargs["subscription_info"]["endpoint"],
+            "https://web.push.apple.com/sub/1",
+        )
+
     def test_stale_subscription_pruned(self) -> None:
         hamlet = self.example_user("hamlet")
         sub = self._subscribe(hamlet)
