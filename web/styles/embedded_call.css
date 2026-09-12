@@ -2,7 +2,7 @@
  *
  * State lives on #jitsi-embedded-call as classes + inline width/height:
  *   (default)    docked panel; drag the top-left corner to resize
- *   .minimized   compact status bar — bar only, iframe kept in the DOM but hidden
+ *   .minimized   compact status bar — bar only, iframe kept live at 1px, invisible
  *   .maximized   fills the viewport
  *   .resizing    a drag is in progress (iframe pointer events off)
  *   .hidden      no call            — panel removed from view (element persists)
@@ -136,8 +136,21 @@ body.jec-dock-minimized #compose {
     display: none;
 }
 
+/* Minimized, the frame is shrunk to 1px and made invisible, never display:none.
+   Chromium throttles timers in a hidden cross-origin iframe to about once a
+   second, which starves lib-jitsi-meet's audio-level polling and the speaking
+   relay: sidebar halos stop for as long as the call is minimized. A frame that
+   is still laid out on screen counts as visible and keeps full-rate timers.
+   Absolutely positioned, so it takes no room in the bar's flex column. */
 .jitsi-embedded-call.minimized .jec-frame {
-    display: none;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .jitsi-embedded-call.minimized .jec-restore {
